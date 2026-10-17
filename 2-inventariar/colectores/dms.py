@@ -7,6 +7,7 @@ NAME = "dms"
 TRIGGERS = ["AWS Database Migration Service"]
 ALWAYS = False
 GLOBAL = False
+TAGS = False  # el colector no lee tags: no cuenta para la regla de recursos sin tag
 
 
 def collect(session, region, account_id):

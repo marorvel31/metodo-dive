@@ -7,6 +7,7 @@ NAME = "globalaccelerator"
 TRIGGERS = ["AWS Global Accelerator"]
 ALWAYS = False
 GLOBAL = True
+TAGS = False  # el colector no lee tags: no cuenta para la regla de recursos sin tag
 
 REGION_API = "us-west-2"
 

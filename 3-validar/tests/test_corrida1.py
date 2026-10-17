@@ -53,33 +53,40 @@ class SesionFalsa:
 # ---------- A1 · CloudFront va a "global" ----------
 
 class CEFalso:
-    """get_cost_and_usage mínimo: por región, y por servicio dentro de la región pedida."""
+    """get_cost_and_usage mínimo: filtros REGION / SERVICE (incl. Not) y GroupBy de 2 claves como máximo."""
 
     def __init__(self, filas):
-        self.filas = filas  # [(cuenta, region, servicio, usd)]
+        self.filas = filas  # [(cuenta, region, servicio, usage_type, usd)]
+        self.llamadas = []
 
     def get_cost_and_usage(self, **p):
         claves = [g["Key"] for g in p["GroupBy"]]
-        region = next((c["Dimensions"]["Values"][0] for c in p["Filter"]["And"]
-                       if c.get("Dimensions", {}).get("Key") == "REGION"), None)
+        assert len(claves) <= 2, "Cost Explorer admite como máximo 2 GroupBy"
+        self.llamadas.append(claves)
+        region, excluidos, solo = None, set(), None
+        for c in p["Filter"]["And"]:
+            if c.get("Dimensions", {}).get("Key") == "REGION":
+                region = c["Dimensions"]["Values"][0]
+            elif c.get("Dimensions", {}).get("Key") == "SERVICE":
+                solo = set(c["Dimensions"]["Values"])
+            elif c.get("Not", {}).get("Dimensions", {}).get("Key") == "SERVICE":
+                excluidos = set(c["Not"]["Dimensions"]["Values"])
+        dim = {"LINKED_ACCOUNT": 0, "REGION": 1, "SERVICE": 2, "USAGE_TYPE": 3}
         grupos = {}
-        for cuenta, reg, servicio, usd in self.filas:
-            if claves == ["LINKED_ACCOUNT", "REGION"]:
-                k = (cuenta, reg)
-            elif reg == region:
-                k = (cuenta, servicio)
-            else:
+        for fila in self.filas:
+            if (region and fila[1] != region) or fila[2] in excluidos or (solo and fila[2] not in solo):
                 continue
-            grupos[k] = grupos.get(k, 0.0) + usd
+            k = tuple(fila[dim[c]] for c in claves)
+            grupos[k] = grupos.get(k, 0.0) + fila[4]
         return {"ResultsByTime": [{"TimePeriod": {"Start": "2026-09-01"}, "Groups": [
             {"Keys": list(k), "Metrics": {"UnblendedCost": {"Amount": str(v)}}} for k, v in grupos.items()]}]}
 
 
 def test_cloudfront_por_region_de_edge_va_a_global():
-    ce = CEFalso([(CUENTA, "eu-west-1", "Amazon Elastic Compute Cloud - Compute", 900.0),
-                  (CUENTA, "eu-west-1", "Amazon CloudFront", 50.0),
-                  (CUENTA, "ap-south-1", "Amazon CloudFront", 3.0),
-                  (CUENTA, "me-south-1", "Amazon CloudFront", 2.0)])
+    ce = CEFalso([(CUENTA, "eu-west-1", "Amazon Elastic Compute Cloud - Compute", "EU-BoxUsage:t3.micro", 900.0),
+                  (CUENTA, "eu-west-1", "Amazon CloudFront", "EU-DataTransfer-Out-Bytes", 50.0),
+                  (CUENTA, "ap-south-1", "Amazon CloudFront", "IN-DataTransfer-Out-Bytes", 3.0),
+                  (CUENTA, "me-south-1", "Amazon CloudFront", "ME-Requests-Tier1", 2.0)])
     cfg = {"billing_months": 1, "threshold_usd": 0.01, "include_accounts": []}
     disc, _, errores = descubrir.descubrir(ce, {CUENTA: "Prod"}, cfg, hoy=dt.date(2026, 10, 17))
 
@@ -89,6 +96,12 @@ def test_cloudfront_por_region_de_edge_va_a_global():
     assert "Amazon CloudFront" not in regiones["eu-west-1"]["services"]
     assert disc["errors"] == errores == []                               # E1: siempre presente
     assert descubrir.regiones_sorpresa(disc) == []
+
+    # USAGE_TYPE: consulta aparte (máx. 2 GroupBy); los de CloudFront también van a "global".
+    assert regiones["eu-west-1"]["usage_types_monthly_usd"] == {"EU-BoxUsage:t3.micro": {"2026-09": 900.0}}
+    assert set(regiones["global"]["usage_types_monthly_usd"]) == {
+        "EU-DataTransfer-Out-Bytes", "IN-DataTransfer-Out-Bytes", "ME-Requests-Tier1"}
+    assert ["LINKED_ACCOUNT", "USAGE_TYPE"] in ce.llamadas
 
 
 # ---------- A2 · regiones no habilitadas ----------
@@ -326,3 +339,64 @@ def test_doctor_formas_inesperadas_no_rompen():
     textos = [t for _, t in doctor.avisos_desde_json(datos)]
     assert any("forma inesperada en unused_ebs_volumes" in t for t in textos)
     assert any("has_mfa" in t for t in textos)
+
+
+# ---------- P1 · tags, root ----------
+
+def _r(service, type_, id_, region=REGION, tags=None, attrs=None):
+    return {"account_id": CUENTA, "region": region, "service": service, "type": type_, "id": id_,
+            "tags": tags or {}, "attrs": attrs or {}, "relations": {}}
+
+
+def test_sin_tags_ignora_colectores_sin_lectura_y_no_colisiona_ids():
+    recursos = [_r("logs", "log_group", "/app"),                         # logs: TAGS = False
+                _r("sqs", "queue", "cola", region="eu-west-1"),
+                _r("sqs", "queue", "cola", region="us-east-1"),          # mismo id, otra región
+                _r("sqs", "queue", "ok", tags={"owner": "a", "env": "prod"})]
+    f, = reglas.regla_sin_tags(recursos, {})
+    assert f["title"].startswith("2 de 3") and "sqs=2" in f["detail"]
+    assert "1 recursos de servicios cuyos tags no se leen" in f["detail"]
+    assert "logs" in reglas.servicios_sin_lectura_de_tags() and "iam" in reglas.servicios_sin_lectura_de_tags()
+
+
+def test_colector_iam_y_reglas_de_root_de_punta_a_punta():
+    from colectores import iam as col_iam
+    s = SesionFalsa()
+    s.stub("iam").add_response("get_account_summary", {"SummaryMap": {
+        "AccountMFAEnabled": 0, "AccountAccessKeysPresent": 1, "AccountPasswordPresent": 1, "Users": 3}}, {})
+    recursos = col_iam.collect(s, "us-east-1", CUENTA)
+    assert recursos[0]["attrs"] == {"mfa_enabled": False, "access_keys_present": True,
+                                    "password_present": True, "users": 3}
+    root = {f["resource_id"]: f for f in reglas.regla_root(recursos, {})}
+    assert set(root) == {"root", "root-access-keys"}
+    assert all(f["region"] is None and f["severity"] == "alta" for f in root.values())
+
+    # Con el mismo finding de aws-doctor (region None, resource "root"), queda uno solo de MFA.
+    doc = doctor.items_a_findings({(CUENTA, "eu-west-1"): doctor.items_desde_json(
+        {"root_user_waste": [{"has_mfa": False}]})})
+    finales = validar.deduplicar(doc + list(root.values()))
+    assert sorted(f["resource_id"] for f in finales) == ["root", "root-access-keys"]
+
+
+def test_root_con_mfa_y_sin_keys_no_genera_nada():
+    r = _r("iam", "account_summary", CUENTA, region="global",
+           attrs={"mfa_enabled": True, "access_keys_present": False, "password_present": True})
+    assert reglas.regla_root([r], {}) == []
+
+
+def test_reporte_tipos_de_uso_del_ultimo_mes():
+    sys.path.insert(0, str(RAIZ / "4-esquematizar"))
+    import reporte
+    disc = {"accounts": {
+        "A": {"regions": {"eu-west-1": {"usage_types_monthly_usd": {
+            "EU-NatGateway-Bytes": {"2026-08": 50.0, "2026-09": 80.0},
+            "EU-BoxUsage:t3.micro": {"2026-09": 10.0}}}}},
+        "B": {"regions": {"global": {"usage_types_monthly_usd": {"EU-NatGateway-Bytes": {"2026-09": 20.0},
+                                                                  "Viejo": {"2026-08": 99.0}}}}}}}
+    ut = reporte.tipos_de_uso(disc)
+    assert ut["month"] == "2026-09" and ut["previous"] == "2026-08"
+    assert [f["usage_type"] for f in ut["rows"]] == ["EU-NatGateway-Bytes", "EU-BoxUsage:t3.micro"]  # "Viejo": 0 hoy
+    nat = ut["rows"][0]
+    assert nat["usd"] == 100.0 and nat["previous_usd"] == 50.0
+    assert nat["accounts"] == [{"account_id": "A", "usd": 80.0}, {"account_id": "B", "usd": 20.0}]
+    assert reporte.tipos_de_uso({}) == {"month": None, "previous": None, "rows": []}

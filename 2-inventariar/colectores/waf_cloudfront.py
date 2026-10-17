@@ -13,6 +13,7 @@ NAME = "waf_cloudfront"
 TRIGGERS = ["AWS WAF", "Amazon CloudFront"]
 ALWAYS = False
 GLOBAL = True
+TAGS = False  # el colector no lee tags: no cuenta para la regla de recursos sin tag
 
 
 def _distribuciones(cf, arn):

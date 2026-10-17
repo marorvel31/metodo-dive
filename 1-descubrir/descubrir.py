@@ -6,7 +6,9 @@ todas las regiones de todas las cuentas. Escribe discovery.json (ver CONTRATO.md
 Llamadas a Cost Explorer (cada una cuesta USD 0.01), sin importar cuántas cuentas haya:
   1 llamada   GroupBy LINKED_ACCOUNT + REGION         → qué regiones tienen costo
   R llamadas  GroupBy LINKED_ACCOUNT + SERVICE, Filter REGION = r (una por región con costo)
-  Total = 1 + R, más una llamada extra por cada página (NextPageToken). R suele ser 3-8.
+  R llamadas  GroupBy LINKED_ACCOUNT + USAGE_TYPE, Filter REGION = r (Cost Explorer admite solo 2 GroupBy)
+  1 llamada   GroupBy LINKED_ACCOUNT + USAGE_TYPE de los servicios globales (CloudFront)
+  Total = 2 + 2R, más una llamada extra por cada página (NextPageToken). R suele ser 3-8.
   El número de cuentas solo influye en la paginación, no en el número de llamadas base.
 
 Uso: python 1-descubrir/descubrir.py [--config dive.config.yaml] [--meses 6]
@@ -75,12 +77,14 @@ def normalizar_region(region):
 
 # ---------- Cost Explorer ----------
 
-def filtro_base(incluir=None, region=None):
+def filtro_base(incluir=None, region=None, sin_servicios=(), solo_servicios=()):
     """Solo registros de uso, sin servicios que no son recursos."""
     condiciones = [
         {"Dimensions": {"Key": "RECORD_TYPE", "Values": RECORD_TYPES_USO}},
-        {"Not": {"Dimensions": {"Key": "SERVICE", "Values": SERVICIOS_NO_RECURSOS}}},
+        {"Not": {"Dimensions": {"Key": "SERVICE", "Values": SERVICIOS_NO_RECURSOS + sorted(sin_servicios)}}},
     ]
+    if solo_servicios:
+        condiciones.append({"Dimensions": {"Key": "SERVICE", "Values": sorted(solo_servicios)}})
     if incluir:
         condiciones.append({"Dimensions": {"Key": "LINKED_ACCOUNT", "Values": sorted(incluir)}})
     if region is not None:
@@ -144,6 +148,24 @@ def descubrir(ce, cuentas, cfg, hoy=None):
                 destino = "global" if servicio in SERVICIOS_GLOBALES else region
                 costos[cuenta][destino][servicio][mes] += usd
 
+    # 2b) Tipos de uso (USAGE_TYPE) por cuenta y región: dicen QUÉ se paga dentro de cada servicio (NAT,
+    #     transferencia, almacenamiento, métricas...). Cost Explorer admite solo 2 GroupBy, así que es otra
+    #     consulta por región, sin servicio. Los servicios globales (CloudFront) se consultan una sola vez
+    #     y van a "global", igual que arriba; si no, sus regiones de edge volverían a aparecer.
+    usos = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(float))))
+    consultas_uso = [(cruda, filtro_base(incluir, cruda, sin_servicios=SERVICIOS_GLOBALES)) for cruda in regiones_crudas]
+    consultas_uso.append(("global", filtro_base(incluir, solo_servicios=SERVICIOS_GLOBALES)))
+    for cruda, filtro in consultas_uso:
+        try:
+            filas = consultar(ce, inicio, fin, ["LINKED_ACCOUNT", "USAGE_TYPE"], filtro, contador)
+        except Exception as e:  # noqa: BLE001 — sin tipos de uso el discovery sigue siendo válido
+            errores.append({"region": cruda, "query": "usage_type", "error": error_corto(e)})
+            continue
+        region = normalizar_region(cruda)
+        for mes, cuenta, tipo, usd in filas:
+            if cuenta in cuentas:
+                usos[cuenta][region][tipo][mes] += usd
+
     # 3) Umbral por servicio (sobre el total del periodo) y forma del CONTRATO.
     salida_cuentas = {}
     for cuenta in sorted(costos):
@@ -159,11 +181,14 @@ def descubrir(ce, cuentas, cfg, hoy=None):
                 for mes, usd in por_mes.items():
                     mensual[mes] += usd
             if servicios:
+                tipos = {t: {m: round(v, 2) for m, v in sorted(por_mes.items())}
+                         for t, por_mes in usos[cuenta][region].items() if sum(por_mes.values()) >= umbral}
                 regiones[region] = {
                     "total_usd": round(sum(servicios.values()), 2),
                     "services": dict(sorted(servicios.items(), key=lambda x: -x[1])),
                     "monthly_usd": {m: round(v, 2) for m, v in sorted(mensual.items())},
                     "services_monthly_usd": servicios_mes,
+                    "usage_types_monthly_usd": dict(sorted(tipos.items(), key=lambda x: -sum(x[1].values()))),
                 }
         if regiones:
             salida_cuentas[cuenta] = {

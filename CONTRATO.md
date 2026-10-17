@@ -50,6 +50,8 @@ setup/  →  1-descubrir → discovery.json
 - `services` usa el nombre exacto de la dimensión `SERVICE` de Cost Explorer.
 - Solo cuenta registros de **uso** (`Usage`, `DiscountedUsage`, `SavingsPlanCoveredUsage`). Las cuotas de RIs/Savings Plans no son recursos y se excluyen.
 - `services_monthly_usd` permite saber si un servicio se sigue cobrando en el último mes o dejó de cobrarse (recurso ya borrado).
+- `usage_types_monthly_usd`: `{usage_type: {mes: usd}}` por región (dimensión `USAGE_TYPE` de Cost Explorer, sin servicio: Cost Explorer admite solo 2 GroupBy y un mismo tipo, ej. `EU-DataTransfer-Out-Bytes`, aparece en varios servicios). Dice qué se paga dentro de cada servicio: NAT, transferencia, almacenamiento, métricas. Los de servicios globales (CloudFront) van a `global`; esa consulta no filtra región, así que en `global` la suma de tipos puede superar a `services` (que solo suma regiones sobre el umbral).
+- En `errors`, `"query": "usage_type"` marca que falló solo la consulta de tipos de uso (los `services` siguen completos).
 
 ## inventory.json (fase 2)
 
@@ -80,6 +82,7 @@ setup/  →  1-descubrir → discovery.json
 - `accounts.<id>.enabled_regions`: regiones habilitadas en la cuenta (`ec2:DescribeRegions`). Falta si la consulta falló; en ese caso no se filtra nada.
 - `skipped`: `[{"account_id", "region", "reason": "region_not_enabled"}]`, cuenta × región con costo donde no se escaneó porque la región (opt-in) no está habilitada. No son errores.
 - `service`: nombre corto del colector (`ec2`, `rds`, `vpc`...). `type`: subtipo (`instance`, `volume`, `security_group`...).
+- `iam/account_summary` (uno por cuenta, región `global`): solo indicadores del root (`mfa_enabled`, `access_keys_present`, `password_present`) y el número de usuarios. Nunca credenciales.
 - `name`: tag `Name` o el nombre propio del recurso; `null` si no tiene.
 - `relations` solo lleva IDs, y solo las claves que apliquen: `vpc_id`, `subnet_ids`, `security_group_ids`, `target_ids`, `attached_to`.
 
@@ -90,6 +93,7 @@ NAME = "rds"                       # nombre corto, igual al del archivo
 TRIGGERS = ["Amazon Relational Database Service"]   # servicios de Cost Explorer que lo activan
 ALWAYS = False                     # True = corre en toda cuenta/región con costo (ej. vpc, que no factura)
 GLOBAL = False                     # True = corre una sola vez por cuenta (en us-east-1), ej. s3, cloudfront, route53
+TAGS = True                        # False = el colector no lee tags; la regla "sin tag" ignora sus recursos
 
 def collect(session, region, account_id):
     """Devuelve una lista de dicts con la forma de `resources` de inventory.json."""

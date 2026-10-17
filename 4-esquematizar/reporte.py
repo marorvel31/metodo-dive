@@ -43,6 +43,7 @@ def datos_reporte(inventory, findings=None, discovery=None, diagramas=None):
             for s, v in ((reg or {}).get("services") or {}).items():
                 servicios_costo[s] = servicios_costo.get(s, 0) + (v or 0)
     return {
+        "usage_types": tipos_de_uso(discovery),
         "inventory_generated_at": inventory.get("generated_at"),
         "findings_generated_at": findings.get("generated_at"),
         "period": discovery.get("period"),
@@ -56,6 +57,34 @@ def datos_reporte(inventory, findings=None, discovery=None, diagramas=None):
         "has_discovery": bool(discovery),
         "has_findings": bool(findings),
     }
+
+
+def tipos_de_uso(discovery, top=15):
+    """Los tipos de uso (USAGE_TYPE) más caros del último mes, sumados en la organización y por cuenta.
+    Es gasto actual que señala dónde mirar (NAT, transferencia, almacenamiento, métricas), no ahorro."""
+    series = {}  # usage_type → {cuenta: {mes: usd}}
+    for acc, d in (discovery.get("accounts") or {}).items():
+        for reg in ((d or {}).get("regions") or {}).values():
+            for tipo, por_mes in ((reg or {}).get("usage_types_monthly_usd") or {}).items():
+                destino = series.setdefault(tipo, {}).setdefault(str(acc), {})
+                for mes, usd in (por_mes or {}).items():
+                    destino[mes] = destino.get(mes, 0) + (usd or 0)
+    meses = sorted({m for cuentas in series.values() for por_mes in cuentas.values() for m in por_mes})
+    if not meses:
+        return {"month": None, "previous": None, "rows": []}
+    ultimo, previo = meses[-1], (meses[-2] if len(meses) > 1 else None)
+    filas = []
+    for tipo, cuentas in series.items():
+        por_cuenta = {a: round(m.get(ultimo, 0), 2) for a, m in cuentas.items() if m.get(ultimo)}
+        total = sum(por_cuenta.values())
+        if total:
+            # Lista con clave "usd" (no {cuenta: usd}): el anonimizador solo redondea/porcentualiza claves *usd*.
+            filas.append({"usage_type": tipo, "usd": round(total, 2),
+                          "previous_usd": round(sum(m.get(previo, 0) for m in cuentas.values()), 2) if previo else None,
+                          "accounts": [{"account_id": a, "usd": v}
+                                       for a, v in sorted(por_cuenta.items(), key=lambda kv: -kv[1])]})
+    filas.sort(key=lambda f: -f["usd"])
+    return {"month": ultimo, "previous": previo, "rows": filas[:top]}
 
 
 def json_embebido(datos):
@@ -312,6 +341,18 @@ function resumen(){
     h += '<h2>Costo por servicio (Cost Explorer, todo el periodo)</h2><div class="panel scroll"><table><thead><tr><th>Servicio</th><th class="num">USD</th><th class="num">%</th></tr></thead><tbody>';
     var tot = sk.reduce(function(s, k){ return s + (sc[k] || 0); }, 0) || 1;
     sk.forEach(function(k){ h += "<tr><td>" + esc(k) + '</td><td class="num">' + usd(sc[k]) + '</td><td class="num">' + (100 * sc[k] / tot).toFixed(1) + "%</td></tr>"; });
+    h += "</tbody></table></div>";
+  }
+  var ut = D.usage_types || {}, filas = ut.rows || [];
+  if (filas.length) {
+    h += "<h2>Principales tipos de uso (" + esc(ut.month) + ")</h2>" +
+      '<p class="hint" style="margin-top:0">Gasto real del último mes por USAGE_TYPE: dónde mirar (NAT, transferencia, almacenamiento, métricas). No es ahorro estimado.</p>' +
+      '<div class="panel scroll"><table><thead><tr><th>Tipo de uso</th><th class="num">USD mes</th><th class="num">Mes anterior</th><th>Cuentas</th></tr></thead><tbody>';
+    filas.forEach(function(f){
+      var cuentas = (f.accounts || []).map(function(c){ return esc(nombreCuenta(c.account_id)) + " " + usd(c.usd); }).join(" · ");
+      h += "<tr><td>" + esc(f.usage_type) + '</td><td class="num">' + usd(f.usd) + '</td><td class="num">' +
+        (f.previous_usd != null ? usd(f.previous_usd) : "—") + '</td><td class="sub">' + cuentas + "</td></tr>";
+    });
     h += "</tbody></table></div>";
   }
   if ((D.diagrams || []).length) {

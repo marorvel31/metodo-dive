@@ -10,6 +10,7 @@ NAME = "waf"
 TRIGGERS = ["AWS WAF"]
 ALWAYS = False
 GLOBAL = False
+TAGS = False  # el colector no lee tags: no cuenta para la regla de recursos sin tag
 
 # Tipos de recurso a los que se asocia una ACL regional; una llamada por tipo.
 TIPOS_REGIONALES = ["APPLICATION_LOAD_BALANCER", "API_GATEWAY", "COGNITO_USER_POOL", "APPSYNC"]

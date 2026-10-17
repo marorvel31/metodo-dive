@@ -222,28 +222,79 @@ def _sin_tag(tags, claves):
     return not any(k.lower() in claves for k in (tags or {}))
 
 
+def servicios_sin_lectura_de_tags():
+    """Colectores con TAGS = False: no leen tags, así que sus recursos siempre parecerían sin tag."""
+    try:
+        import importlib
+        import pkgutil
+
+        import colectores
+    except ImportError:  # reglas usado sin 2-inventariar en el path: no se excluye nada
+        return set()
+    sin = set()
+    for info in pkgutil.iter_modules(colectores.__path__):
+        try:
+            mod = importlib.import_module(f"colectores.{info.name}")
+        except Exception:  # noqa: BLE001 — un colector roto no impide validar
+            continue
+        if not getattr(mod, "TAGS", True):
+            sin.add(getattr(mod, "NAME", info.name))
+    return sin
+
+
+def _llave(r):
+    return (r["account_id"], r.get("region"), r.get("service"), r.get("type"), r["id"])
+
+
 def regla_sin_tags(recursos, ctx):
-    """Agregada por cuenta: cuántos recursos no tienen tag de owner y/o environment."""
-    por_cuenta = {}
+    """Agregada por cuenta: cuántos recursos no tienen tag de owner y/o environment. Solo cuenta
+    recursos de colectores que leen tags; los demás se informan aparte en el detalle."""
+    excluidos = ctx.get("servicios_sin_tags")
+    if excluidos is None:
+        excluidos = servicios_sin_lectura_de_tags()
+    por_cuenta, sin_lectura = {}, {}
     for r in recursos:
+        if r.get("service") in excluidos:
+            sin_lectura[r["account_id"]] = sin_lectura.get(r["account_id"], 0) + 1
+            continue
         por_cuenta.setdefault(r["account_id"], []).append(r)
     out = []
     for account_id, lista in sorted(por_cuenta.items()):
         sin_owner = [r for r in lista if _sin_tag(r.get("tags"), TAGS_OWNER)]
         sin_env = [r for r in lista if _sin_tag(r.get("tags"), TAGS_ENV)]
-        faltan = {r["id"] for r in sin_owner} | {r["id"] for r in sin_env}
+        faltan = {_llave(r) for r in sin_owner} | {_llave(r) for r in sin_env}
         if not faltan:
             continue
         por_servicio = {}
         for r in lista:
-            if r["id"] in faltan:
+            if _llave(r) in faltan:
                 por_servicio[r["service"]] = por_servicio.get(r["service"], 0) + 1
         resumen = ", ".join(f"{s}={n}" for s, n in sorted(por_servicio.items(), key=lambda x: -x[1]))
         sev = "media" if len(faltan) > len(lista) / 2 else "baja"
+        fuera = sin_lectura.get(account_id, 0)
+        nota = f" {fuera} recursos de servicios cuyos tags no se leen quedan fuera del conteo." if fuera else ""
         out.append(hallazgo("inventario", sev, account_id, None, None,
                             f"{len(faltan)} de {len(lista)} recursos sin tag de owner/environment",
-                            f"Sin owner: {len(sin_owner)} · sin environment: {len(sin_env)}. Por servicio: {resumen}.",
+                            f"Sin owner: {len(sin_owner)} · sin environment: {len(sin_env)}. Por servicio: {resumen}.{nota}",
                             None, FUENTE))
+    return out
+
+
+def regla_root(recursos, ctx):
+    """Usuario root (de colectores/iam.py). region=None: es global, y así se deduplica con aws-doctor."""
+    out = []
+    for r in recursos:
+        if not _es(r, {"iam"}, "account_summary"):
+            continue
+        a = _attrs(r)
+        if a.get("access_keys_present"):
+            out.append(hallazgo("riesgo", "alta", r["account_id"], None, "root-access-keys",
+                                "Usuario root con access keys",
+                                "La cuenta tiene access keys del root: credenciales permanentes sin límite de permisos. "
+                                "Revisa su último uso y bórralas.", None, FUENTE))
+        if a.get("password_present") and not a.get("mfa_enabled"):
+            out.append(hallazgo("riesgo", "alta", r["account_id"], None, "root", "Usuario root sin MFA",
+                                "El root tiene password y no tiene MFA.", None, FUENTE))
     return out
 
 
@@ -259,6 +310,7 @@ REGLAS = [
     regla_opensearch_abierto,
     regla_s3_sin_bloqueo_publico,
     regla_sin_tags,
+    regla_root,
 ]
 
 

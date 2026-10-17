@@ -7,6 +7,7 @@ NAME = "cloudwatch"
 TRIGGERS = ["AmazonCloudWatch"]
 ALWAYS = True
 GLOBAL = False
+TAGS = False  # el colector no lee tags: no cuenta para la regla de recursos sin tag
 
 # Dimensiones que apuntan a un recurso inventariado: sirven para ligar la alarma a lo que vigila.
 _DIMENSIONES_RECURSO = {"InstanceId", "DBInstanceIdentifier", "DBClusterIdentifier", "LoadBalancer", "TargetGroup",

@@ -71,7 +71,9 @@ def test_rds_opensearch_s3(hallazgos_reglas):
 def test_tags_agregado_por_cuenta(hallazgos_reglas):
     tags = por_titulo(hallazgos_reglas, "sin tag")
     assert [f["account_id"] for f in tags] == ["111111111111"]   # la cuenta de dev está toda tageada
-    assert tags[0]["resource_id"] is None and tags[0]["title"].startswith("12 de 14")
+    # 1 recurso es de un colector que no lee tags (TAGS = False): queda fuera del conteo y se informa.
+    assert tags[0]["resource_id"] is None and tags[0]["title"].startswith("11 de 13")
+    assert "1 recursos de servicios cuyos tags no se leen" in tags[0]["detail"]
 
 
 # ---------- b) cruce billing ----------
