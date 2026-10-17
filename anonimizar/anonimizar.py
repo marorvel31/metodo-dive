@@ -20,6 +20,7 @@ import base64
 import bisect
 import hashlib
 import hmac
+import html
 import ipaddress
 import json
 import math
@@ -62,14 +63,29 @@ DOMINIOS_PUBLICOS = {"amazon.com", "aws.amazon.com", "amazontrust.com", "awsstat
 # archivo (md, py, sh, js, json...), para no tratar "findings.md" como dominio.
 TLDS = ("com|net|org|io|co|cloud|dev|app|ai|info|biz|us|uk|es|mx|ar|cl|pe|br|ec|uy|pa|cr|gt|ve|bo|do|"
         "hn|sv|ni|de|fr|it|nl|eu|ca|au|in|me|tech|xyz|online|site|store|pay|bank|finance|money|"
-        "global|lat|internal|local|corp|lan|aws")
+        "global|lat|internal|local|corp|lan|aws|shop|club|agency|digital|health|cat|"
+        "vn|ph|th|pk|ng|ke|ma|eg|"
+        # ccTLDs europeos y otros frecuentes, y gov/mil/edu (antes un dominio .pt pasaba la verificación)
+        "pt|ch|be|at|se|dk|no|fi|ie|cz|pl|gr|ro|hu|lu|sk|si|hr|bg|lt|lv|ee|is|li|mt|cy|"
+        "jp|cn|kr|sg|hk|tw|nz|za|ru|ua|tr|il|ae|sa|gov|mil|edu")
 SEGUNDO_NIVEL = {"com", "co", "org", "net", "gov", "gob", "edu", "ac"}
 
 RE_DOMINIO = re.compile(
-    r"(?<![\w.@-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:" + TLDS + r"))(?![\w-]|\.[a-z0-9])",
+    # Bordes: no se empieza pegado a letra/@/-, ni tras "." salvo en un wildcard "*.dominio" (SANs de ACM), ni en
+    # el "40" de un email codificado (%40dominio); sí tras %2F/%3A de una URL codificada.
+    r"(?<![\w@-])(?<![^*]\.)(?<!^\.)(?!(?<=%)40)((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:" + TLDS +
+    r"|xn--[a-z0-9-]{2,59}))"
+    r"(?![\w-]|\.[a-z0-9])",
     re.IGNORECASE)
 RE_EMAIL = re.compile(r"(?<![\w.+-])([\w.+-]+)@((?:[a-z0-9-]+\.)+[a-z]{2,})(?![\w-])", re.IGNORECASE)
 RE_IP = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?:/(\d{1,2}))?(?!\.?\d)")
+# Candidatos IPv6 (luego se validan con ipaddress): sin letra, dígito, ":", "-", "_", "/" ni "." pegados, para
+# no tomar ARNs (apigateway:eu-west-1::/restapis, s3:::bucket); tras un solo ":" sí, si empieza con hex
+# ("IPv6:2a05::1"). Las horas (10:00:00) no son IPv6 válidas. Sin "." después: ::ffff:1.2.3.4 es IPv4 (RE_IP).
+RE_IP6 = re.compile(r"(?:(?<![0-9A-Za-z.:_/-])|(?<=[^:][:/])(?=[0-9A-Fa-f]))"
+                    r"((?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4})(?:/(\d{1,3}))?(?![0-9A-Za-z:.])")
+RE_EMAIL_URL = re.compile(r"(?<![\w.+-])([\w.+-]+)%40((?:[a-z0-9-]+\.)+[a-z]{2,})(?![\w-])", re.IGNORECASE)
+RE_12_GUIONES = re.compile(r"(?<![\d-])(\d{4})-(\d{4})-(\d{4})(?![\d-])")
 RE_IP_GUIONES = re.compile(r"(?<![a-z0-9])(ec2|ip)-(\d{1,3})-(\d{1,3})-(\d{1,3})-(\d{1,3})(?![\d])", re.IGNORECASE)
 RE_12 = re.compile(r"(?<!\d)(\d{12})(?!\d)")
 RE_UUID = re.compile(r"(?<![0-9a-f])([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?![0-9a-f])",
@@ -110,12 +126,18 @@ RE_ARN = re.compile(r"arn:aws[a-z-]*:[a-z0-9-]*:[a-z0-9-]*:(?:\d{12})?:[^\s\"'<>
 RE_TOKEN_ARN = re.compile(r"(?<=[/:_.])([0-9A-Za-z]{16,})(?=$|[/:_.-])")
 
 RE_COSTO = re.compile(r"(\$\s?)(\d(?:[\d,]*\d)?(?:\.\d+)?)|(?<![\w.,])(\d(?:[\d,]*\d)?(?:\.\d+)?)(\s?USD\b)")
-RE_COSTO_CLAVE = re.compile(r"([\"']?)(\w*(?:usd|cost|costo)\w*)\1(\s*:\s*)(-?\d+(?:\.\d+)?)", re.IGNORECASE)
+# \w acotado: sin tope es cuadrático en secuencias largas de letras.
+RE_COSTO_CLAVE = re.compile(r"([\"']?)(\w{0,64}(?:usd|cost|costo)\w{0,64})\1(\s*:\s*)(-?\d+(?:\.\d+)?)", re.IGNORECASE)
 RE_MENSUAL = re.compile(r"^\s*(?:USD\s*)?(?:/\s*mes|/\s*month|/\s*mo\b|al mes|por mes|mensual|per month)",
                         re.IGNORECASE)
 RE_CLAVE_COSTO = re.compile(r"usd|cost|costo", re.IGNORECASE)
 RE_CLAVE_MENSUAL = re.compile(r"month|mensual|(?<![a-z])mes(?![a-z])", re.IGNORECASE)
 
+# Valor numérico de una medida en JSON ("stored_bytes": 225339777173): 12 dígitos que no son una cuenta.
+RE_CLAVE_MEDIDA = re.compile(r"\"\w*(?:bytes|size|count|_gb|_mb|seconds|_ms)\w*\"\s*:\s*$", re.IGNORECASE)
+# Campos (o tags) cuyo valor es una persona: no hay patrón que la reconozca en texto libre, pero la clave sí.
+RE_CLAVE_PERSONA = re.compile(r"^(?:owner|user_?name|created_?by|creator|contact|responsable|dueñ?o|author)$",
+                              re.IGNORECASE)
 RE_DIAGRAMA = re.compile(r"(<diagram\b[^>]*>)(.*?)(</diagram>)", re.DOTALL)
 
 
@@ -153,7 +175,8 @@ class IndicePrefijos:
         return None
 
 
-RE_TRUNCADO = re.compile(r"([A-Za-z0-9][A-Za-z0-9!_./:-]*)(?=…)")
+# Acotado a 255: sin tope, una línea larga sin "…" es cuadrática (40k caracteres tardaban ~5 s).
+RE_TRUNCADO = re.compile(r"([A-Za-z0-9][A-Za-z0-9!_./:-]{0,255})(?=…)")
 
 
 def fragmentos_truncados(texto):
@@ -199,6 +222,11 @@ def con_caja_de(hallado, original, falso):
     return falso
 
 
+def slug_nombre(s):
+    """El mismo slug que 4-esquematizar/esquematizar.py usa en los nombres de archivo de los diagramas."""
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", str(s or "")).strip("-")[:60]
+
+
 def es_ip(texto):
     try:
         return ipaddress.IPv4Address(texto)
@@ -208,6 +236,13 @@ def es_ip(texto):
 
 def ip_publica(ip):
     return ip.is_global and not ip.is_multicast
+
+
+def es_ip6(texto):
+    try:
+        return ipaddress.IPv6Address(texto)
+    except ValueError:
+        return None
 
 
 REDES_DOC = [ipaddress.IPv4Network(r) for r in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")]
@@ -247,7 +282,7 @@ class Mapeo:
     mientras se reuse el mismo archivo de mapeo y no se pueden revertir sin él."""
 
     CATEGORIAS = ("account_id", "account_name", "resource_id", "uuid", "token", "cdk", "ip", "ip_private",
-                  "domain", "email", "access_key", "term")
+                  "ip6", "domain", "email", "access_key", "term", "person")
 
     def __init__(self, datos=None):
         datos = datos or {}
@@ -385,15 +420,25 @@ class Anonimizador:
 
     def _compilar_nombres(self):
         nombres = [n for n in self.mp.m["account_name"] if n not in self.mp.nombres_genericos]
+        self._nombres_bajo = {n.lower(): f for n, f in self.mp.m["account_name"].items()}
+        # El slug con que esquematizar nombra los diagramas (<cuenta>-Jos-N-ez.drawio): va pegado a un "-".
+        slugs = {slug_nombre(n): slug_nombre(self.mp.m["account_name"][n]) for n in nombres}
+        self._slugs = {s.lower(): f for s, f in slugs.items() if len(s) >= 4 and s.lower() not in self._nombres_bajo}
+        self.re_slugs = (re.compile(r"(?<![A-Za-z0-9])(" + "|".join(re.escape(s) for s in sorted(
+            self._slugs, key=len, reverse=True)) + r")(?=\.drawio|\.xml|\.png|\.svg|[\"'/\s]|$)", re.IGNORECASE)
+            if self._slugs else None)
         nombres.sort(key=len, reverse=True)
         self.re_nombres = (re.compile(r"(?<![\w-])(" + "|".join(re.escape(n) for n in nombres) + r")(?![\w-])",
                                       re.IGNORECASE) if nombres else None)
-        self._nombres_bajo = {n.lower(): f for n, f in self.mp.m["account_name"].items()}
 
     def nombre_cuenta(self, nombre):
         return self.mp.m["account_name"].get(nombre) or self._nombres_bajo.get(nombre.lower(), nombre)
 
     # ---- generadores por categoría
+
+    def _cuenta_partes(self, acc_id):
+        falso = self.cuenta(acc_id)
+        return falso[:4], falso[4:8], falso[8:]
 
     def cuenta(self, acc_id):
         return self.mp.obtener("account_id", acc_id, lambda h: str(int.from_bytes(h[:8], "big") % 9 * 10**11
@@ -483,6 +528,18 @@ class Anonimizador:
     def dominio(self, reg):
         return self.mp.siguiente("domain", reg.lower(), lambda n: "ejemplo.com" if n == 1 else f"ejemplo{n}.com")
 
+    def ip6(self, texto):
+        """IPv6 pública → 2001:db8::/32 (documentación). Las privadas (ULA, link-local) se dejan, como las
+        IPv4 privadas. Cada dirección se mapea por separado: la contención VPC /56 ⊃ subred /64 no se conserva."""
+        ip = es_ip6(texto)
+        if ip is None:
+            return texto
+        if ip_publica(ip):
+            return self.mp.obtener("ip6", str(ip), lambda h: str(ipaddress.IPv6Address(b"\x20\x01\x0d\xb8" + h[:12])))
+        if self.ocultar_privadas and ip.is_private and not ip.is_loopback and str(ip) != "::":
+            return self.mp.obtener("ip6", str(ip), lambda h: str(ipaddress.IPv6Address(b"\xfd" + h[:15])))
+        return texto
+
     def email(self, local, dom):
         if es_publico(dom, self.dom_publicos) or sufijo_aws(dom):
             return f"{local}@{dom}"
@@ -547,6 +604,9 @@ class Anonimizador:
         t = RE_ACCESS_KEY.sub(lambda m: self.mp.obtener("access_key", m.group(1),
                                                          lambda h: "AKIAEXAMPLE" + alnum_como("A" * 9, h)), t)
         t = RE_EMAIL.sub(lambda m: self.email(m.group(1), m.group(2)), t)
+        t = RE_EMAIL_URL.sub(lambda m: self.email(m.group(1), m.group(2)).replace("@", "%40", 1), t)
+        t = RE_IP6.sub(lambda m: self.ip6(m.group(1)) + (f"/{m.group(2)}" if m.group(2) else ""), t)
+        t = RE_12_GUIONES.sub(lambda m: "-".join(self._cuenta_partes("".join(m.groups()))), t)
         t = RE_IP_GUIONES.sub(lambda m: m.group(1) + "-" + self.ip(".".join(m.group(2, 3, 4, 5))).replace(".", "-"), t)
         t = RE_DOMINIO.sub(lambda m: self._host(m.group(1)), t)
         if self._final_n is not None:
@@ -575,6 +635,9 @@ class Anonimizador:
         t = RE_IP.sub(lambda m: self.ip(m.group(1)) + (f"/{m.group(2)}" if m.group(2) else ""), t)
         if self.re_nombres:
             t = self.re_nombres.sub(lambda m: self.nombre_cuenta(m.group(1)), t)
+        if getattr(self, "re_slugs", None):
+            t = self.re_slugs.sub(lambda m: self._slugs[m.group(1).lower()], t)
+        t = self._personas(t)
         if self.re_terminos:
             t = self.re_terminos.sub(lambda m: con_caja(m.group(0), self.terminos[m.group(0).lower()]), t)
         return t
@@ -640,12 +703,32 @@ class Anonimizador:
 
     # ---- JSON
 
+    def persona(self, valor):
+        if "@" in valor or not re.search(r"[A-Za-z]", valor) or len(valor.strip()) < 3:
+            return self.texto(valor)  # email, número o sigla: el paso de texto normal
+        if valor in self.mp.falsos["person"]:
+            return valor
+        return self.mp.siguiente("person", valor.strip().lower(), lambda n: f"persona{n}")
+
+    def _personas(self, t):
+        """Reemplaza en texto libre (reporte.html, .md) las personas aprendidas de los campos JSON."""
+        reales = sorted((r for r in self.mp.m["person"] if len(r) >= 3), key=len, reverse=True)
+        if not reales:
+            return t
+        if getattr(self, "_re_personas_n", None) != len(reales):
+            self._re_personas = re.compile(r"(?<![\w-])(" + "|".join(re.escape(r) for r in reales) + r")(?![\w-])",
+                                           re.IGNORECASE)
+            self._re_personas_n = len(reales)
+        return self._re_personas.sub(lambda m: self.mp.m["person"][m.group(1).lower()], t)
+
     def json(self, obj, ruta=()):
         if isinstance(obj, dict):
             salida = {}
             for k, v in obj.items():
                 k2 = self.texto(k, costos=False) if isinstance(k, str) else k
-                if (k == "name" and len(ruta) >= 2 and ruta[-2] == "accounts" and isinstance(v, str)) \
+                if isinstance(k, str) and isinstance(v, str) and RE_CLAVE_PERSONA.match(k):
+                    salida[k2] = self.persona(v)
+                elif (k == "name" and len(ruta) >= 2 and ruta[-2] == "accounts" and isinstance(v, str)) \
                         or (k == "account_name" and isinstance(v, str)):
                     salida[k2] = self.nombre_cuenta(v) if v in self.mp.m["account_name"] else self.texto(v)
                 else:
@@ -757,8 +840,9 @@ def verificar(carpeta, mapeo, terminos, dominios_publicos=(), privadas=False):
     alnum = (r"(?<![A-Za-z0-9])", r"(?![A-Za-z0-9])")
     grupos = {  # nombre: (inicio, fin, ignorar_caja, categorías)
         "cuentas": (r"(?<!\d)", r"(?!\d)", False, ("account_id",)),
-        "nombres": (r"(?<![\w-])", r"(?![\w-])", True, ("account_name",)),
+        "nombres": (r"(?<![\w-])", r"(?![\w-])", True, ("account_name", "person")),
         "ips": (r"(?<![\d.])", r"(?!\d|\.\d)", False, ("ip", "ip_private")),
+        "ips6": (r"(?<![0-9A-Za-z:])", r"(?![0-9A-Za-z:])", True, ("ip6",)),
         "dominios": (r"(?<![A-Za-z0-9-])", r"(?![A-Za-z0-9-])", True, ("domain", "email")),
         "ids": (*alnum, True, ("resource_id", "uuid", "token", "access_key")),
         "ids_cortos": (*alnum, False, ("token",)),
@@ -806,7 +890,7 @@ def verificar(carpeta, mapeo, terminos, dominios_publicos=(), privadas=False):
                 problemas.append((rel, "comienzo de un valor original en etiqueta truncada",
                                   t[max(0, ini - 30):fin + 5].replace("\n", " ")))
         for m in RE_12.finditer(t):
-            if m.group(1) not in falsos["account_id"]:
+            if m.group(1) not in falsos["account_id"] and not RE_CLAVE_MEDIDA.search(t, max(0, m.start() - 60), m.start()):
                 reportar("12 dígitos que no son un ID falso", m)
         if re_term:
             for m in re_term.finditer(t):
@@ -819,6 +903,27 @@ def verificar(carpeta, mapeo, terminos, dominios_publicos=(), privadas=False):
             ip = es_ip(".".join(m.group(2, 3, 4, 5)))
             if ip and ip_publica(ip):
                 reportar("IP pública en hostname", m)
+        for m in RE_IP6.finditer(t):
+            ip = es_ip6(m.group(1))
+            if ip and ip_publica(ip) and str(ip) not in falsos["ip6"]:
+                reportar("IPv6 pública", m)
+        for m in RE_12_GUIONES.finditer(t):
+            if "".join(m.groups()) not in falsos["account_id"]:
+                reportar("ID de cuenta con guiones", m)
+        decodificado = html.unescape(urllib.parse.unquote(urllib.parse.unquote(t)))
+        if decodificado != t:
+            for m in RE_EMAIL.finditer(decodificado):
+                if not (es_publico(m.group(2), extra) or sufijo_aws(m.group(2))
+                        or dominio_registrable(m.group(2)) in falsos["domain"]):
+                    problemas.append((rel, "email codificado (%xx / &#..;) sin anonimizar",
+                                      decodificado[max(0, m.start() - 30):m.end() + 30].replace("\n", " ")))
+        for m in RE_EMAIL_URL.finditer(t):
+            dom = m.group(2)
+            if es_publico(dom, extra) or sufijo_aws(dom):
+                continue
+            if f"{m.group(1).lower()}@" in falsos["email"] and dominio_registrable(dom) in falsos["domain"]:
+                continue
+            reportar("email (%40) sin anonimizar", m)
         for m in RE_EMAIL.finditer(t):
             dom = m.group(2)
             if es_publico(dom, extra) or sufijo_aws(dom):
@@ -888,6 +993,8 @@ def main(argv=None):
     ap.add_argument("--costos", choices=["exact", "rounded", "percent"], help="sobrescribe anonymize.costs")
     ap.add_argument("--ocultar-privadas", action="store_true", help="también reemplaza IPs/CIDRs privados")
     ap.add_argument("--verificar", action="store_true", help="solo verifica una carpeta ya anonimizada")
+    ap.add_argument("--sin-terminos", action="store_true",
+                    help="permite anonimizar sin replace_terms (los nombres de marca NO se reemplazan ni verifican)")
     args = ap.parse_args(argv)
     os.umask(0o077)  # la copia anonimizada y el mapeo solo los lee el usuario
 
@@ -907,9 +1014,17 @@ def main(argv=None):
         if problemas:
             imprimir_problemas(problemas)
             return 2
+        if not lista:
+            print(f"Verificación OK: {origen}, PERO SIN términos de marca: los nombres del cliente NO se verificaron.")
+            return 0
         print(f"Verificación OK: {origen}")
         return 0
 
+    if not terminos and not args.sin_terminos:
+        print("ERROR: falta anonymize.replace_terms (o --termino). Sin los nombres de marca, buckets, dominios y "
+              "ARNs con el nombre del cliente pasan la verificación. Usa --sin-terminos para seguir igual.",
+              file=sys.stderr)
+        return 2
     if origen.name.endswith("-anon"):
         raise SystemExit("Esa carpeta ya es anónima; pasa la carpeta original salida/<fecha>.")
     ruta_mapeo = resolver(args.mapping) if args.mapping else origen / MAPEO_NOMBRE
@@ -974,6 +1089,13 @@ def main(argv=None):
         (destino / "VERIFICACION_FALLIDA.txt").write_text(
             "La verificación encontró valores sin anonimizar. No presentes esta carpeta.\n")
         return 2
+    if not an.terminos:
+        (destino / "SIN_TERMINOS_DE_MARCA.txt").write_text(
+            "Anonimizado con --sin-terminos: los nombres de marca del cliente NO se reemplazaron ni verificaron.\n"
+            "Revisa a mano buckets, dominios, ARNs y tags antes de presentar.\n")
+        print("Verificación OK, PERO SIN términos de marca: los nombres del cliente NO se verificaron "
+              "(ver SIN_TERMINOS_DE_MARCA.txt).")
+        return 0
     print("Verificación OK: no quedan valores originales, IDs de 12 dígitos reales ni términos de marca.")
     return 0
 

@@ -27,7 +27,8 @@ Inventario de una AWS Organization con muchas cuentas, en una tarde, con IA como
 - [aws-doctor](https://github.com/elC0mpa/aws-doctor) (opcional, fase V)
 
 ```bash
-uv venv .venv && uv pip install -p .venv -r requirements.txt
+uv venv .venv && uv pip install -p .venv --require-hashes -r requirements.lock   # versiones exactas con hash
+# (sin uv: python3.11 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements.lock)
 cp dive.config.example.yaml dive.config.yaml   # y ajusta management_profile
 ```
 
@@ -64,7 +65,7 @@ export DIVE_CONFIG=dive.config.yaml            # o la ruta a la config de cada o
 .venv/bin/python 3-validar/validar.py           # ~20 s (usa --sin-doctor si no tienes aws-doctor)
 .venv/bin/python 4-esquematizar/esquematizar.py
 .venv/bin/python 4-esquematizar/reporte.py
-.venv/bin/python anonimizar/anonimizar.py salida/<fecha>   # sale ≠ 0 si detecta cualquier fuga
+.venv/bin/python anonimizar/anonimizar.py salida/<fecha>   # sale ≠ 0 si detecta cualquier fuga; exige anonymize.replace_terms
 ```
 
 Las salidas quedan en `salida/<fecha>/` (ignorada por git). Si trabajas para un cliente, apunta `output_dir` fuera del repo.
