@@ -175,7 +175,7 @@ td.si{color:var(--ok)}td.no{color:var(--coral-claro)}
 
 
 /* iceberg en corte (slide del método) */
-.corte{position:absolute;left:90px;top:443px;width:1410px;height:420px;overflow:visible}
+.corte{position:absolute;left:90px;top:360px;width:1200px;height:446px;overflow:visible}
 .corte .agua-corte{fill:var(--aqua);fill-opacity:.08}
 .corte .linea-agua{stroke:var(--aqua);stroke-width:2}
 .corte .punta-corte{fill:#ffffff;fill-opacity:.9;stroke:var(--aqua);stroke-width:2}
@@ -327,7 +327,7 @@ pre.grande{font-size:30px;line-height:1.5}
 .paso{background:var(--panel);border:2px solid var(--borde);border-radius:16px;padding:32px 26px;display:flex;flex-direction:column;gap:18px}
 .paso b{font:900 88px/1 var(--display);color:var(--aqua)}
 .paso strong{font:800 44px/1 var(--display);text-transform:uppercase}
-.paso code{font:500 25px/1.3 var(--mono);color:var(--suave);overflow-wrap:anywhere}
+.paso code{font:500 20px/1.3 var(--mono);color:var(--suave);overflow-wrap:anywhere}
 .paso.tuyo{border:3px solid var(--coral-claro)}
 .paso.tuyo b{color:var(--coral-claro)}
 .chips{display:flex;flex-wrap:wrap;gap:20px;margin-top:10px}
@@ -376,6 +376,34 @@ pre.grande{font-size:30px;line-height:1.5}
 .portada h1 span{color:var(--dl-morado)}
 /* desde −40 m el agua es oscura: las cifras grandes pasan a lima */
 :root[data-z="2"],:root[data-z="3"],:root[data-z="4"],:root[data-z="5"],:root[data-z="6"],:root[data-z="7"]{--arena:var(--dl-lima)}
+
+/* ---------- tipografía de marca DiveLearn: Symora (títulos) + Century Gothic (cuerpo) ----------
+   Se usan las fuentes instaladas en el equipo (local), no se embeben: Century Gothic es de Monotype.
+   Sin ellas, el deck cae a Big Shoulders + Inter. Symora es más ancha: los tamaños bajan. */
+@font-face{font-family:"DL Display";src:local("SYMORARegular"),local("SYMORA Regular"),local("SYMORA");font-weight:100 900}
+:root{--display:"DL Display","Big Shoulders Display","Arial Narrow",sans-serif;
+  --cuerpo:"Century Gothic","Inter",-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --estrecha:"Big Shoulders Display","Arial Narrow","Roboto Condensed",Impact,sans-serif}
+.hud .z{font-family:var(--estrecha)}
+h1{font-size:104px}
+.portada h1{font-size:112px;max-width:16ch}
+h2{font-size:70px;line-height:1.02;letter-spacing:0}
+.eyebrow{font-size:20px}.eyebrow .fase{font-size:22px}
+p,li{font-size:31px}.lead{font-size:42px}
+.cifra b{font-size:120px}.cifra span{font-size:30px}
+.reloj .num{font-size:130px}
+.v .num{font-size:96px}.v .num-m{font-size:60px}.v .num-s{font-size:36px}.v .num-sev{font-size:64px}
+.v .ttl,.v .ttl-c{font-size:28px;letter-spacing:.01em}.v .seg-t{font-size:38px}
+.v .tx{font-size:27px}.v .tx-s{font-size:24px}.v .mini{font-size:20px}.v .veredicto{font-size:26px}
+.tarjeta b{font-size:64px}.tarjeta span{font-size:28px}
+.paso b{font-size:72px}.paso strong{font-size:32px}
+.icono b{font-size:30px}
+.chip{font-size:30px}
+.corte .nv{font-size:30px}
+.marca-agua .sep{width:2px;height:30px;background:var(--tenue);opacity:.6}
+.v .ic-p{fill:none;stroke:var(--texto);stroke-width:4;stroke-linecap:round}
+.leyenda-fases{display:flex;flex-wrap:wrap;gap:12px 30px;font-size:25px;color:var(--suave)}
+.leyenda-fases b{font-family:var(--display);color:var(--texto);margin-right:6px}
 
 @media (prefers-reduced-motion:reduce){
   :root,.slide,.slide.activa,.columna,.hud .ventana,.progreso i{transition:none}
@@ -431,10 +459,10 @@ pre.grande{font-size:30px;line-height:1.5}
   <aside class="notas"><p>Bienvenida. Presentarme en una frase: llevo la infraestructura AWS de una organización con muchas cuentas.</p><p>Hoy: una historia real, un método que se llevan y el código para correrlo el lunes.</p></aside>
 </section>
 
-<section class="slide" data-zona="0" data-titulo="¿Cuántos recursos tienes?">
+<section class="slide" data-zona="0" data-corte="1" data-titulo="¿Cuántos recursos tienes?">
   <div class="fila" style="align-items:center;gap:80px;flex:1">
     <div class="col" style="flex:1.4">
-      <h2 style="font-size:96px">¿Cuántos recursos tienes corriendo en AWS ahora mismo?</h2>
+      <h2 style="font-size:76px">¿Cuántos recursos tienes corriendo en AWS ahora mismo?</h2>
     </div>
     <div class="reloj" aria-label="Cuenta regresiva de 10 segundos">
       <svg viewBox="0 0 360 360"><circle class="pista" cx="180" cy="180" r="165"/><circle class="arco" id="arco" cx="180" cy="180" r="165"/></svg>
@@ -622,10 +650,10 @@ pre.grande{font-size:30px;line-height:1.5}
     <text class="num" x="40" y="110">17.595</text>
     <text class="tx" x="40" y="160">combinaciones posibles</text>
     <text class="tx-s" x="40" y="200">23 cuentas × 17 regiones × 45 colectores</text>
-    <rect class="lleno-a" x="1040" y="290" width="130" height="130" rx="10"/>
+    <rect class="lleno-a" x="1040" y="316" width="104" height="104" rx="8"/>
     <text class="num" x="1040" y="250">451</text>
-    <text class="tx" x="1190" y="350">tareas</text>
-    <text class="tx-s" x="1190" y="390">el 2,6 %</text>
+    <text class="tx" x="1162" y="358">tareas</text>
+    <text class="tx-s" x="1162" y="396">el 2,6 % · a escala</text>
   </svg>
   <aside class="notas"><p>La idea central: la factura no miente. Todo lo que corre y cuesta aparece ahí, con cuenta, región y servicio, aunque nadie se acuerde de haberlo creado.</p><p>En vez de preguntarle a cada API de cada región si tiene algo, le preguntamos a la factura. Menos llamadas, menos throttling, ninguna llamada de más a producción.</p><p>6 meses y no 1: atrapa lo intermitente y lo que se prendió hace poco.</p></aside>
 </section>
@@ -854,17 +882,15 @@ pre.grande{font-size:30px;line-height:1.5}
 <section class="slide" data-zona="4" data-titulo="Una tarde">
   <div class="eyebrow">De cero a la carta náutica</div>
   <h2>4 minutos 48 segundos</h2>
-  <svg class="v" viewBox="0 0 1410 240" role="img" aria-label="Duración de cada fase en la corrida completa">
+  <svg class="v" viewBox="0 0 1410 170" role="img" aria-label="Duración de cada fase en la corrida completa">
 <rect class="seg-a" x="0.0" y="40" width="68.9" height="110" rx="8"/>
 <text class="seg-t" x="14.0" y="108">D</text>
 <rect class="seg-b" x="72.9" y="40" width="496.7" height="110" rx="8"/>
 <text class="seg-t" x="86.9" y="108">I</text>
-<text class="mini" x="72.9" y="190">Inventariar</text><text class="mini" x="72.9" y="222">103 s</text>
 <rect class="seg-a" x="573.6" y="40" width="78.6" height="110" rx="8"/>
 <text class="seg-t" x="587.6" y="108">C</text>
 <rect class="seg-b" x="656.2" y="40" width="521.0" height="110" rx="8"/>
 <text class="seg-t" x="670.2" y="108">I₂</text>
-<text class="mini" x="656.2" y="190">Segunda pasada</text><text class="mini" x="656.2" y="222">108 s</text>
 <rect class="seg-a" x="1181.2" y="40" width="73.8" height="110" rx="8"/>
 <text class="seg-t" x="1195.2" y="108">C₂</text>
 <rect class="seg-b" x="1259.0" y="40" width="88.4" height="110" rx="8"/>
@@ -872,6 +898,7 @@ pre.grande{font-size:30px;line-height:1.5}
 <rect class="seg-a" x="1351.4" y="40" width="44.6" height="110" rx="8"/>
 <text class="seg-t" x="1365.4" y="108">A</text>
   </svg>
+  <div class="leyenda-fases"><span><b>D</b>Descubrir 15 s</span><span><b>I</b>Inventariar 103 s</span><span><b>C</b>Cobertura 17 s</span><span><b>I₂</b>Segunda pasada 108 s</span><span><b>C₂</b>Cobertura 16 s</span><span><b>V</b>Validar 19 s</span><span><b>A</b>Diagramas y anonimizar 10 s</span></div>
   <p class="lead"><span class="tachado">Semanas</span> → una tarde para construirlo, cinco minutos para repetirlo.</p>
   <aside class="notas"><p>Corrida completa real: Descubrir 15 s, Inventariar 103 s, cobertura 17 s, segunda pasada 108 s, cobertura 16 s, Validar 19 s, diagramas y anonimizar 10 s.</p><p>La mayor parte de la tarde se fue en integrar y corregir, no en escribir código.</p></aside>
 </section>
@@ -890,7 +917,7 @@ pre.grande{font-size:30px;line-height:1.5}
 <!-- ================= SEGURIDAD ================= -->
 <section class="slide portada" data-zona="5" data-titulo="Seguridad · Portada">
   <div class="eyebrow">Segunda inmersión</div>
-  <h1 style="font-size:150px">Seguridad</h1>
+  <h1 style="font-size:120px">Seguridad</h1>
   <p class="lead">Cientos de llamadas a todas tus cuentas, con tu identidad. Sin abrir ninguna puerta.</p>
   <aside class="notas"><p>La parte más importante si lo van a correr en su org, sobre todo si es regulada.</p></aside>
 </section>
@@ -899,7 +926,7 @@ pre.grande{font-size:30px;line-height:1.5}
   <div class="eyebrow">Principio</div>
   <h2>Tu identidad, no tus permisos</h2>
   <svg class="v" viewBox="0 0 1410 460" role="img" aria-label="Un mismo usuario SSO con dos sesiones: administradora y de solo lectura para el agente">
-    <circle class="ic-g" cx="705" cy="70" r="46"/><text class="tx" x="705" y="160" text-anchor="middle">tu usuario SSO</text>
+    <circle class="ic-g" cx="705" cy="70" r="46"/><circle class="ic-p" cx="705" cy="60" r="13"/><path class="ic-p" d="M683 98 C683 80 727 80 727 98"/><text class="tx" x="705" y="160" text-anchor="middle">tu usuario SSO</text>
     <path class="lin" d="M705 180 C705 230 340 220 340 280"/><path class="lin" d="M705 180 C705 230 1070 220 1070 280"/>
     <rect class="caja-c" x="140" y="280" width="400" height="160" rx="16"/><text class="ttl" x="340" y="345" text-anchor="middle">Tú</text><text class="tx" x="340" y="395" text-anchor="middle">AdministratorAccess</text>
     <rect class="caja-ok" x="870" y="280" width="400" height="160" rx="16"/><text class="ttl" x="1070" y="345" text-anchor="middle">El agente</text><text class="tx" x="1070" y="395" text-anchor="middle">DIVE_ReadOnly</text>
@@ -1077,7 +1104,7 @@ python anonimizar/anonimizar.py salida/&lt;fecha&gt;</pre>
     <span class="logo-dl" role="img" aria-label="DiveLearn"></span>
     <i class="sep"></i><span class="logo-nb" role="img" aria-label="Nublit by Domus Global"></span>
   </div>
-  <h1 style="font-size:130px;max-width:15ch">¿Cuántos recursos tienes corriendo <span>ahora?</span></h1>
+  <h1 style="font-size:96px;max-width:13ch">¿Cuántos recursos tienes corriendo <span>ahora?</span></h1>
   <div class="autora"><b>Mar Ortiz</b><span>Gracias · Preguntas</span></div>
   <div class="cierre-qr">
     <div class="qr-item"><span class="etq">Llévate el código</span>
@@ -1091,7 +1118,7 @@ python anonimizar/anonimizar.py salida/&lt;fecha&gt;</pre>
 </section>
 
 <!-- marca de agua: se oculta en las slides que ya llevan los logos grandes -->
-<div class="marca-agua" aria-hidden="true"><i class="d"></i><i class="nb"></i></div>
+<div class="marca-agua" aria-hidden="true"><i class="d"></i><i class="sep"></i><i class="nb"></i></div>
 
 <!-- pie -->
 <div class="pie" aria-hidden="true"><span class="marca-pie">MÉTODO DIVE</span><span id="pie-titulo"></span><span class="num" id="pie-num"></span></div>
