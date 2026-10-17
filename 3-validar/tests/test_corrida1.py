@@ -1,0 +1,328 @@
+"""Regresiones de la primera corrida real (org de 6 cuentas): regiones de edge de CloudFront,
+regiones opt-in no habilitadas, categorías nuevas de aws-doctor, totales duplicados y reglas que
+dependían de campos que los colectores no emitían. Sin llamadas a AWS.
+
+Uso: .venv/bin/python -m pytest 3-validar/tests -q
+"""
+
+import datetime as dt
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import boto3
+from botocore.stub import Stubber
+
+AQUI = Path(__file__).resolve().parent
+RAIZ = AQUI.parent.parent
+sys.path.insert(0, str(AQUI.parent))
+sys.path.insert(0, str(RAIZ / "1-descubrir"))
+
+import validar  # noqa: E402  (agrega RAIZ y 2-inventariar al path)
+import doctor  # noqa: E402
+import reglas  # noqa: E402
+import descubrir  # noqa: E402
+import inventariar  # noqa: E402
+from colectores import ec2 as col_ec2, sqs as col_sqs  # noqa: E402
+from common import error_corto  # noqa: E402
+from common.aws import regiones_habilitadas  # noqa: E402
+
+CUENTA, REGION = "111122223333", "eu-west-1"
+CFG = {"access_mode": "sso", "max_workers": 2}
+
+
+class SesionFalsa:
+    """boto3.Session.client con Stubber ya activado (como en 2-inventariar/tests)."""
+
+    def __init__(self):
+        self._base = boto3.Session(aws_access_key_id="x", aws_secret_access_key="x", region_name=REGION)
+        self.clientes, self.stubs = {}, {}
+
+    def stub(self, servicio):
+        c = self._base.client(servicio, region_name=REGION)
+        self.clientes[servicio] = c
+        self.stubs[servicio] = Stubber(c)
+        self.stubs[servicio].activate()
+        return self.stubs[servicio]
+
+    def client(self, servicio, region_name=None, config=None):
+        return self.clientes[servicio]
+
+
+# ---------- A1 · CloudFront va a "global" ----------
+
+class CEFalso:
+    """get_cost_and_usage mínimo: por región, y por servicio dentro de la región pedida."""
+
+    def __init__(self, filas):
+        self.filas = filas  # [(cuenta, region, servicio, usd)]
+
+    def get_cost_and_usage(self, **p):
+        claves = [g["Key"] for g in p["GroupBy"]]
+        region = next((c["Dimensions"]["Values"][0] for c in p["Filter"]["And"]
+                       if c.get("Dimensions", {}).get("Key") == "REGION"), None)
+        grupos = {}
+        for cuenta, reg, servicio, usd in self.filas:
+            if claves == ["LINKED_ACCOUNT", "REGION"]:
+                k = (cuenta, reg)
+            elif reg == region:
+                k = (cuenta, servicio)
+            else:
+                continue
+            grupos[k] = grupos.get(k, 0.0) + usd
+        return {"ResultsByTime": [{"TimePeriod": {"Start": "2026-09-01"}, "Groups": [
+            {"Keys": list(k), "Metrics": {"UnblendedCost": {"Amount": str(v)}}} for k, v in grupos.items()]}]}
+
+
+def test_cloudfront_por_region_de_edge_va_a_global():
+    ce = CEFalso([(CUENTA, "eu-west-1", "Amazon Elastic Compute Cloud - Compute", 900.0),
+                  (CUENTA, "eu-west-1", "Amazon CloudFront", 50.0),
+                  (CUENTA, "ap-south-1", "Amazon CloudFront", 3.0),
+                  (CUENTA, "me-south-1", "Amazon CloudFront", 2.0)])
+    cfg = {"billing_months": 1, "threshold_usd": 0.01, "include_accounts": []}
+    disc, _, errores = descubrir.descubrir(ce, {CUENTA: "Prod"}, cfg, hoy=dt.date(2026, 10, 17))
+
+    regiones = disc["accounts"][CUENTA]["regions"]
+    assert set(regiones) == {"eu-west-1", "global"}                      # sin regiones de edge
+    assert regiones["global"]["services"] == {"Amazon CloudFront": 55.0}
+    assert "Amazon CloudFront" not in regiones["eu-west-1"]["services"]
+    assert disc["errors"] == errores == []                               # E1: siempre presente
+    assert descubrir.regiones_sorpresa(disc) == []
+
+
+# ---------- A2 · regiones no habilitadas ----------
+
+def test_regiones_habilitadas_con_stubber():
+    s = SesionFalsa()
+    s.stub("ec2").add_response("describe_regions", {"Regions": [{"RegionName": "us-east-1"},
+                                                                 {"RegionName": "eu-west-1"}]}, {})
+    assert regiones_habilitadas(s) == ["eu-west-1", "us-east-1"]
+
+
+def test_filtrar_habilitadas_omite_opt_in_y_respeta_cuentas_sin_lista():
+    mod = object()
+    tareas = [(CUENTA, "eu-west-1", mod), (CUENTA, "me-south-1", mod), ("999", "me-south-1", mod)]
+    validas, omitidas = inventariar.filtrar_habilitadas(tareas, {CUENTA: ["eu-west-1", "us-east-1"]})
+    assert [t[:2] for t in validas] == [(CUENTA, "eu-west-1"), ("999", "me-south-1")]  # sin lista: no filtra
+    assert [t[:2] for t in omitidas] == [(CUENTA, "me-south-1")]
+
+
+def test_doctor_no_corre_en_regiones_no_habilitadas(tmp_path, monkeypatch):
+    perfiles = tmp_path / "dive-config"
+    perfiles.write_text("")
+    import common.aws
+    monkeypatch.setattr(common.aws, "DIVE_AWS_CONFIG", perfiles)
+    monkeypatch.setattr(doctor.shutil, "which", lambda _: "/usr/bin/aws-doctor")
+    regiones = []
+    monkeypatch.setattr(doctor.subprocess, "run", lambda cmd, **k: (
+        regiones.append(cmd[cmd.index("--region") + 1]) or subprocess.CompletedProcess(cmd, 0, "{}", "")))
+    disc = {"accounts": {CUENTA: {"regions": {"eu-west-1": {}, "me-south-1": {}, "global": {}}}}}
+    doctor.ejecutar(CFG, disc, tmp_path, habilitadas={CUENTA: ["eu-west-1", "us-east-1"]})
+    assert regiones == ["eu-west-1"]
+
+
+# ---------- B · aws-doctor 2.x ----------
+
+WASTE_V2 = {
+    "account_id": CUENTA, "generated_at": "2026-10-17T00:00:00Z", "has_waste": True,
+    "total_estimated_monthly_cost": 60.0,
+    "summary": [{"category": "Idle Load Balancers", "count": 1, "estimated_monthly_cost": 18.4}],
+    "errors": {"Lambda": "AccessDeniedException: StartQuery"},
+    "idle_load_balancers": [{"name": "alb-x", "arn": "arn:aws:elasticloadbalancing:eu-west-1:1:loadbalancer/app/alb-x/1",
+                             "type": "application", "days_checked": 7, "estimated_monthly_cost": 18.4}],
+    "idle_nat_gateways": [{"nat_gateway_id": "nat-1", "vpc_id": "vpc-1", "estimated_monthly_cost": 32.4}],
+    "idle_ec2_instances": [{"instance_id": "i-1", "instance_type": "t3.small", "estimated_monthly_cost": 15.0}],
+    "over_provisioned_lambdas": [{"function_name": "fn-a", "configured_memory_mb": 1024, "recommended_memory_mb": 256}],
+    "ecr_untagged_images": [{"repository_name": "repo-a", "untagged_image_count": 4, "estimated_monthly_cost": 1.5}],
+    "ecr_no_lifecycle_policies": [{"repository_name": "repo-a"}],
+    "ecr_empty_repositories": [{"repository_name": "repo-b"}],
+    "unused_secrets": [{"name": "s-1", "estimated_monthly_cost": 0.4}],
+    "unused_iam_users": [{"user_name": "u-1", "password_last_used": "Never"},
+                         {"user_name": "u-2", "access_keys_status": "All 1 keys unused > 90 days"}],
+    "root_user_waste": [{"has_mfa": False}],
+    "categoria_del_futuro": [{"x": 1}],
+}
+
+
+def test_doctor_v2_categorias_nuevas_y_globales():
+    items = doctor.items_desde_json(WASTE_V2)
+    # El mismo JSON en dos regiones: IAM y root son globales y no se duplican; lo regional sí se repite.
+    findings = doctor.items_a_findings({(CUENTA, "eu-west-1"): items, (CUENTA, "us-east-1"): items})
+    titulos = [f["title"] for f in findings]
+
+    root = [f for f in findings if f["title"] == "Usuario root sin MFA"]
+    assert len(root) == 1 and root[0]["severity"] == "alta" and root[0]["region"] is None
+    iam = [f for f in findings if f["title"].startswith("Usuarios IAM sin uso")]
+    assert len(iam) == 1 and iam[0]["title"].endswith("(2)") and iam[0]["region"] is None
+    assert titulos.count("NAT Gateway sin tráfico") == 2                 # regional: una por región
+    for t in ["Load balancer sin tráfico", "Instancia EC2 ociosa (CPU y red bajas)",
+              "Lambdas con memoria sobredimensionada (1)", "Repositorios ECR con imágenes sin tag (1)",
+              "Repositorios ECR sin lifecycle policy (1)", "Repositorios ECR vacíos (1)",
+              "Secretos sin acceso reciente (1)"]:
+        assert t in titulos, t
+    nat = next(f for f in findings if f["title"] == "NAT Gateway sin tráfico")
+    assert nat["resource_id"] == "nat-1" and nat["monthly_usd"] == 32.4
+
+
+def test_doctor_root_con_mfa_no_es_finding():
+    items = doctor.items_desde_json({"root_user_waste": [{"has_mfa": True}]})
+    assert items == []
+
+
+def test_doctor_avisa_errores_y_categorias_desconocidas():
+    avisos = doctor.avisos_desde_json(WASTE_V2)
+    assert ("aws-doctor/Lambda", "AccessDeniedException: StartQuery") in avisos
+    desconocidas = [t for c, t in avisos if "categoría desconocida" in t]
+    assert desconocidas == ["categoría desconocida de aws-doctor: categoria_del_futuro (1); "
+                            "actualiza CATEGORIAS en doctor.py"]        # summary/errors/etc. no cuentan
+
+
+def test_doctor_ejecutar_registra_avisos_una_vez(tmp_path, monkeypatch):
+    perfiles = tmp_path / "dive-config"
+    perfiles.write_text("")
+    import common.aws
+    monkeypatch.setattr(common.aws, "DIVE_AWS_CONFIG", perfiles)
+    monkeypatch.setattr(doctor.shutil, "which", lambda _: "/usr/bin/aws-doctor")
+    salida = json.dumps(WASTE_V2)
+    monkeypatch.setattr(doctor.subprocess, "run", lambda cmd, **k: subprocess.CompletedProcess(cmd, 0, salida, ""))
+    disc = {"accounts": {CUENTA: {"regions": {"eu-west-1": {}, "us-east-1": {}}}}}
+    _, errores = doctor.ejecutar(CFG, disc, tmp_path)
+    assert sum("categoría desconocida" in e["error"] for e in errores) == 1
+    assert sum(e["collector"] == "aws-doctor/Lambda" for e in errores) == 2   # uno por región
+
+
+# ---------- C2 · deduplicar con región ----------
+
+def _f(cat, region, rid, usd):
+    return {"id": None, "category": cat, "severity": "baja", "account_id": CUENTA, "region": region,
+            "resource_id": rid, "title": cat, "detail": "", "monthly_usd": usd, "source": "regla"}
+
+
+def test_deduplicar_usa_region_y_descarta_costo_de_un_desperdicio():
+    findings = [_f("desperdicio", "eu-west-1", "vol-1", 10.0), _f("costo", "eu-west-1", "vol-1", 2.0),
+                _f("costo", "us-east-1", "vol-1", 2.0),            # mismo id en otra región: es otro recurso
+                _f("riesgo", "eu-west-1", "vol-1", None),
+                _f("costo", None, None, 1.0), _f("costo", None, None, 1.0)]  # agregados sin id: no se tocan
+    salida = validar.deduplicar(findings)
+    assert [(f["category"], f["region"]) for f in salida] == [
+        ("desperdicio", "eu-west-1"), ("costo", "us-east-1"), ("riesgo", "eu-west-1"), ("costo", None), ("costo", None)]
+
+
+# ---------- D · campos que las reglas esperaban ----------
+
+def test_ec2_detenida_de_punta_a_punta_desde_el_colector():
+    s = SesionFalsa()
+    s.stub("ec2").add_response("describe_instances", {"Reservations": [{"Instances": [{
+        "InstanceId": "i-0stop", "State": {"Name": "stopped"}, "InstanceType": "t3.micro",
+        "StateTransitionReason": "User initiated (2026-01-31 10:00:00 GMT)",
+        "LaunchTime": dt.datetime(2025, 1, 1, tzinfo=dt.timezone.utc)}]}]}, {})
+    recursos = col_ec2.collect(s, REGION, CUENTA)
+    inv = json.loads(json.dumps({"generated_at": "2026-10-17T00:00:00Z", "resources": recursos}, default=str))
+    detenidas = [f for f in reglas.aplicar(inv) if "detenida" in f["title"]]
+    assert [f["resource_id"] for f in detenidas] == ["i-0stop"]
+
+
+def test_snapshot_de_una_ami_registrada_no_es_viejo():
+    viejo = {"start_time": "2024-01-01T00:00:00Z", "size_gb": 8}
+    inv = {"generated_at": "2026-10-17T00:00:00Z", "resources": [
+        {"account_id": CUENTA, "region": REGION, "service": "ebs", "type": "snapshot", "id": "snap-ami",
+         "attrs": viejo, "relations": {}},
+        {"account_id": CUENTA, "region": REGION, "service": "ebs", "type": "snapshot", "id": "snap-suelto",
+         "attrs": viejo, "relations": {}},
+        {"account_id": CUENTA, "region": REGION, "service": "ami", "type": "image", "id": "ami-1",
+         "attrs": {"snapshot_ids": ["snap-ami"]}, "relations": {}}]}
+    viejos = [f["resource_id"] for f in reglas.aplicar(inv) if f["title"].startswith("Snapshot EBS de más")]
+    assert viejos == ["snap-suelto"]
+
+
+def test_sqs_cola_borrada_a_mitad_no_tumba_el_colector():
+    s = SesionFalsa()
+    st = s.stub("sqs")
+    base = "https://sqs.eu-west-1.amazonaws.com/111122223333/"
+    st.add_response("list_queues", {"QueueUrls": [base + "borrada", base + "viva"]}, {})
+    st.add_client_error("get_queue_attributes", service_error_code="AWS.SimpleQueueService.NonExistentQueue",
+                        http_status_code=400)
+    st.add_response("get_queue_attributes", {"Attributes": {"QueueArn": "arn:aws:sqs:eu-west-1:1:viva"}}, None)
+    st.add_response("list_queue_tags", {"Tags": {}}, None)
+    recursos = col_sqs.collect(s, REGION, CUENTA)
+    assert [r["id"] for r in recursos] == ["viva"]
+
+
+# ---------- G2 · errores sin datos del operador ----------
+
+def test_error_corto_redacta_sesion_y_email():
+    e = Exception("User: arn:aws:sts::111122223333:assumed-role/AWSReservedSSO_DIVE_ReadOnly_abc/ana@empresa.pt "
+                  "is not authorized to perform: ec2:DescribeX")
+    texto = error_corto(e)
+    assert "ana@" not in texto
+    assert texto.startswith("Exception: User: arn:aws:sts::111122223333:assumed-role/AWSReservedSSO_DIVE_ReadOnly_abc/<sesion> ")
+
+
+# ---------- Regresión de la corrida 2: CloudFront en "global" dejó sin escanear us-east-1 ----------
+
+class _Mod:
+    def __init__(self, nombre, triggers, always=False, global_=False):
+        self.NAME, self.TRIGGERS, self.ALWAYS, self.GLOBAL = nombre, triggers, always, global_
+
+
+def test_costo_global_activa_colector_regional_en_us_east_1():
+    acm = _Mod("acm", ["AWS Certificate Manager", "Amazon CloudFront"])
+    vpc = _Mod("vpc", [], always=True)
+    disc = {"accounts": {CUENTA: {"regions": {
+        "eu-west-1": {"services": {"Amazon Elastic Compute Cloud - Compute": 10.0}},
+        "global": {"services": {"Amazon CloudFront": 5.0}}}}}}
+    tareas = {(a, r, m.NAME) for a, r, m in inventariar.planear(disc, [acm, vpc])}
+    assert (CUENTA, "us-east-1", "acm") in tareas            # certificados de CloudFront
+    assert (CUENTA, "us-east-1", "vpc") not in tareas        # ALWAYS no se extiende a us-east-1 por esto
+    assert (CUENTA, "eu-west-1", "vpc") in tareas
+
+
+def test_validar_pasa_regiones_habilitadas_al_doctor(tmp_path, monkeypatch):
+    recibido = {}
+
+    def falso_doctor(cfg, discovery, salida, timeout, creds_fn, habilitadas):
+        recibido.update(habilitadas)
+        return [], []
+
+    monkeypatch.setattr(doctor, "ejecutar", falso_doctor)
+    disc = {"generated_at": "x", "period": {"start": "2026-09-01", "end": "2026-10-01", "months": 1},
+            "threshold_usd": 0.01, "accounts": {CUENTA: {"name": "P", "total_usd": 0, "regions": {}}}}
+    inv = {"generated_at": "2026-10-17T00:00:00Z", "resources": [], "scanned": [], "errors": [],
+           "accounts": {CUENTA: {"name": "P", "enabled_regions": ["eu-west-1"]}, "999": {"name": "Q"}}}
+    validar.validar(CFG, disc, inv, tmp_path)
+    assert recibido == {CUENTA: ["eu-west-1"]}
+
+
+def test_region_omitida_no_genera_no_inventariado():
+    rds = _Mod("rds", ["Amazon Relational Database Service"])
+    disc = {"period": {"start": "2026-09-01", "end": "2026-10-01", "months": 1}, "accounts": {CUENTA: {
+        "name": "P", "total_usd": 100.0, "regions": {
+            "me-south-1": {"total_usd": 50.0, "services": {"Amazon Relational Database Service": 50.0}},
+            "eu-west-1": {"total_usd": 50.0, "services": {"Amazon Relational Database Service": 50.0}}}}}}
+    inv = {"resources": [], "scanned": [], "errors": [],
+           "skipped": [{"account_id": CUENTA, "region": "me-south-1", "reason": "region_not_enabled"}]}
+    regiones = [f["region"] for f in validar.cruce_billing(disc, inv, [rds]) if "no está inventariado" in f["title"]]
+    assert regiones == ["eu-west-1"]
+
+
+# ---------- Scan de seguridad del diff ----------
+
+def test_redactar_usuario_iam_email_codificado_y_saltos():
+    from common import redactar
+    t = redactar("User: arn:aws:iam::111122223333:user/ana.silva is not authorized\nmail ana%40empresa.pt")
+    assert "ana" not in t and ":user/<usuario>" in t and "\n" not in t
+
+
+def test_avisos_de_aws_doctor_se_redactan():
+    datos = {"errors": {"EC2": "AccessDenied: assumed-role/AWSReservedSSO_X/ana@empresa.pt not authorized"}}
+    (colector, texto), = doctor.avisos_desde_json(datos)
+    assert colector == "aws-doctor/EC2" and "ana@" not in texto and "<sesion>" in texto
+
+
+def test_doctor_formas_inesperadas_no_rompen():
+    datos = {"unused_ebs_volumes": {"no": "es lista"}, "root_user_waste": [{"has_mfa": None}], "errors": ["x"]}
+    assert doctor.items_desde_json(datos) == []
+    textos = [t for _, t in doctor.avisos_desde_json(datos)]
+    assert any("forma inesperada en unused_ebs_volumes" in t for t in textos)
+    assert any("has_mfa" in t for t in textos)

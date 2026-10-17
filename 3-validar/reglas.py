@@ -69,9 +69,12 @@ def regla_eip_sin_asociar(recursos, ctx):
 
 
 def regla_snapshots_viejos(recursos, ctx):
+    # Un snapshot que respalda una AMI registrada no se puede borrar sin deregistrar la AMI: no es "viejo".
+    de_amis = {(r["account_id"], r["region"], s) for r in recursos if _es(r, {"ami", "ec2"}, "image")
+               for s in _attrs(r).get("snapshot_ids") or []}
     out = []
     for r in recursos:
-        if not _es(r, {"ebs", "ec2"}, "snapshot"):
+        if not _es(r, {"ebs", "ec2"}, "snapshot") or (r["account_id"], r["region"], r["id"]) in de_amis:
             continue
         a = _attrs(r)
         fecha = parsear_fecha(a.get("start_time") or a.get("create_time"))

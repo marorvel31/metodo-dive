@@ -433,8 +433,13 @@ function hallazgos(){
             (SEV_ORDEN[String(b.severity).toLowerCase()] == null ? 9 : SEV_ORDEN[String(b.severity).toLowerCase()])) ||
       ((b.monthly_usd || 0) - (a.monthly_usd || 0)) || String(a.id).localeCompare(String(b.id));
   });
-  var mensual = lista.reduce(function(s, f){ return s + (Number(f.monthly_usd) || 0); }, 0);
-  $("h-meta").textContent = lista.length + " hallazgos" + (mensual ? " · " + usd(mensual) + "/mes en juego" : "");
+  // Igual que findings.md: solo desperdicio + costo. Las regiones sorpresa o lo "no inventariado" son
+  // gasto existente, no ahorro.
+  var mensual = lista.reduce(function(s, f){
+    return s + ((f.category === "desperdicio" || f.category === "costo") ? (Number(f.monthly_usd) || 0) : 0);
+  }, 0);
+  $("h-meta").textContent = lista.length + " hallazgos" +
+    (mensual ? " · ahorro potencial estimado (desperdicio + costo): " + usd(mensual) + "/mes" : "");
   $("h-body").innerHTML = lista.map(function(f){
     var s = sevNorm(f.severity);
     return '<tr><td><span class="sev sev-' + esc(s) + '">' + esc(s) + "</span></td><td>" + esc(f.category) + "</td><td>" + esc(nombreCuenta(f.account_id)) +

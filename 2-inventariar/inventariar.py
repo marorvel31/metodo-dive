@@ -23,8 +23,8 @@ sys.path.insert(0, str(AQUI))
 
 import boto3  # noqa: E402
 
-from common import ahora, cargar_config, carpeta_salida, escribir_json, leer_json  # noqa: E402
-from common.aws import sesion_cuenta, sesion_management  # noqa: E402
+from common import ahora, cargar_config, carpeta_salida, error_corto, escribir_json, leer_json  # noqa: E402
+from common.aws import regiones_habilitadas, sesion_cuenta, sesion_management  # noqa: E402
 
 import colectores  # noqa: E402
 
@@ -52,11 +52,18 @@ def planear(discovery, mods):
                 if mod.ALWAYS or servicios_cuenta & set(mod.TRIGGERS):
                     tareas.append((account_id, REGION_GLOBAL, mod))
                 continue
-            for region, datos in cuenta["regions"].items():
+            regiones = cuenta["regions"]
+            for region, datos in regiones.items():
                 if region == "global":
                     continue
                 if mod.ALWAYS or set(datos["services"]) & set(mod.TRIGGERS):
                     tareas.append((account_id, region, mod))
+            # Costo global (CloudFront) que activa un colector regional: sus recursos viven en us-east-1
+            # (ej. los certificados ACM de CloudFront), aunque la cuenta no tenga otro costo ahí.
+            servicios_globales = set(regiones.get("global", {}).get("services", {}))
+            ya = any(a == account_id and r == REGION_GLOBAL and m is mod for a, r, m in tareas)
+            if not ya and servicios_globales & set(mod.TRIGGERS):
+                tareas.append((account_id, REGION_GLOBAL, mod))
     return tareas
 
 
@@ -69,16 +76,42 @@ def credenciales_por_cuenta(cfg, cuentas):
             c = sesion_cuenta(cfg, account_id, mgmt).get_credentials().get_frozen_credentials()
             creds[account_id] = c
         except Exception as e:  # noqa: BLE001 — una cuenta sin acceso no detiene la corrida
-            errores.append({"account_id": account_id, "region": None, "collector": "acceso", "error": str(e)[:300]})
+            errores.append({"account_id": account_id, "region": None, "collector": "acceso", "error": error_corto(e)})
     return creds, errores
+
+
+def _sesion(creds):
+    return boto3.Session(aws_access_key_id=creds.access_key, aws_secret_access_key=creds.secret_key,
+                         aws_session_token=creds.token)
+
+
+def habilitadas_por_cuenta(creds):
+    """{account_id: [regiones habilitadas]}. Si la consulta falla, la cuenta no aparece y no se filtra."""
+    habilitadas, errores = {}, []
+    for account_id, c in creds.items():
+        try:
+            habilitadas[account_id] = regiones_habilitadas(_sesion(c))
+        except Exception as e:  # noqa: BLE001 — sin la lista se escanea todo, como antes
+            errores.append({"account_id": account_id, "region": None, "collector": "regiones", "error": error_corto(e)})
+    return habilitadas, errores
+
+
+def filtrar_habilitadas(tareas, habilitadas):
+    """Separa las tareas en regiones no habilitadas (opt-in apagadas): ahí toda llamada falla o se cuelga."""
+    validas, omitidas = [], []
+    for t in tareas:
+        account_id, region, mod = t
+        if account_id in habilitadas and region not in habilitadas[account_id]:
+            omitidas.append(t)
+        else:
+            validas.append(t)
+    return validas, omitidas
 
 
 def ejecutar(tarea, creds):
     account_id, region, mod = tarea
-    session = boto3.Session(aws_access_key_id=creds.access_key, aws_secret_access_key=creds.secret_key,
-                            aws_session_token=creds.token)
     inicio = time.monotonic()
-    recursos = mod.collect(session, region, account_id)
+    recursos = mod.collect(_sesion(creds), region, account_id)
     return recursos, round(time.monotonic() - inicio, 2)
 
 
@@ -111,6 +144,13 @@ def main():
 
     creds, errores = credenciales_por_cuenta(cfg, cuentas)
     tareas = [t for t in tareas if t[0] in creds]
+    habilitadas, errores_reg = habilitadas_por_cuenta(creds)
+    errores += errores_reg
+    tareas, omitidas = filtrar_habilitadas(tareas, habilitadas)
+    omitidas = sorted({(a, r) for a, r, _ in omitidas})
+    if omitidas:
+        print(f"Omito {len(omitidas)} cuenta×región no habilitadas: "
+              + ", ".join(f"{a}/{r}" for a, r in omitidas))
 
     recursos, escaneado = [], []
     with ThreadPoolExecutor(max_workers=cfg["max_workers"]) as pool:
@@ -124,14 +164,17 @@ def main():
                                   "count": len(encontrados), "seconds": segundos})
             except Exception as e:  # noqa: BLE001
                 errores.append({"account_id": account_id, "region": region, "collector": mod.NAME,
-                                "error": f"{type(e).__name__}: {str(e)[:300]}"})
+                                "error": error_corto(e)})
             if i % 25 == 0 or i == len(futuros):
                 print(f"  {i}/{len(futuros)} tareas · {len(recursos)} recursos · {len(errores)} errores")
 
     inventario = {
         "generated_at": ahora(),
-        "accounts": {a: {"name": discovery["accounts"][a]["name"]} for a in discovery["accounts"]},
+        "accounts": {a: {"name": discovery["accounts"][a]["name"],
+                         **({"enabled_regions": habilitadas[a]} if a in habilitadas else {})}
+                     for a in discovery["accounts"]},
         "scanned": sorted(escaneado, key=lambda x: (x["account_id"], x["region"], x["collector"])),
+        "skipped": [{"account_id": a, "region": r, "reason": "region_not_enabled"} for a, r in omitidas],
         "resources": recursos,
         "errors": errores,
     }

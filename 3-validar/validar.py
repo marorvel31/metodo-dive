@@ -95,6 +95,7 @@ def cruce_billing(discovery, inventory, mods):
         con_recursos_region.add((r["account_id"], r["region"], r["service"]))
         con_recursos_cuenta.add((r["account_id"], r["service"]))
     escaneado = {(s["account_id"], s["region"], s["collector"]) for s in inventory.get("scanned", [])}
+    omitidas = {(s["account_id"], s["region"]) for s in inventory.get("skipped", [])}
     errores = {}
     for e in inventory.get("errors", []):
         errores.setdefault((e.get("account_id"), e.get("collector")), []).append(e)
@@ -127,6 +128,8 @@ def cruce_billing(discovery, inventory, mods):
                 if region == "global":
                     continue  # colector regional con costo sin región: no hay dónde buscar
                 hay = any((account_id, region, m.NAME) in con_recursos_region for m in mods_s)
+                if not hay and (account_id, region) in omitidas:
+                    continue  # región no habilitada hoy: lo cobrado fue antes de deshabilitarla
                 if not hay and usd / meses >= MIN_USD_MES_COBRO:
                     findings.append(_no_inventariado(account_id, region, servicio, usd / meses, mods_s,
                                                      escaneado, errores, series.get(servicio), ultimo))
@@ -195,10 +198,19 @@ def _no_inventariado(account_id, region, servicio, usd_mes, mods_s, escaneado, e
 # ---------- consolidar y escribir ----------
 
 def deduplicar(findings):
-    """Si aws-doctor y una regla marcan el mismo recurso con la misma categoría, queda el primero."""
+    """Si aws-doctor y una regla marcan el mismo recurso con la misma categoría, queda el primero.
+
+    Además, si un recurso es desperdicio (ej. volumen sin adjuntar), se descarta su finding de costo
+    (ej. migrar gp2→gp3): lo que se recomienda es borrarlo, y sumar los dos duplicaría el ahorro.
+    """
     vistos, salida = set(), []
+    desperdicio = {(f["account_id"], f["region"], f["resource_id"]) for f in findings
+                   if f["resource_id"] and f["category"] == "desperdicio"}
     for f in findings:
-        llave = (f["account_id"], f["resource_id"], f["category"])
+        recurso = (f["account_id"], f["region"], f["resource_id"])
+        if f["resource_id"] and f["category"] == "costo" and recurso in desperdicio:
+            continue
+        llave = (*recurso, f["category"])
         if f["resource_id"] and llave in vistos:
             continue
         vistos.add(llave)
@@ -227,7 +239,7 @@ def generar_md(findings, discovery, errores):
     lineas = ["# Findings · Método DIVE", "",
               f"Generado: {ahora()} · {len(findings)} findings · {len(discovery['accounts'])} cuentas", "",
               f"Ahorro potencial estimado (desperdicio + costo): **${total:,.2f}/mes**. "
-              "Es un tope: algunos findings se solapan (ej. un volumen gp2 sin adjuntar).", "",
+              "Es un tope: son estimaciones, y un recurso marcado como desperdicio no suma además su optimización.", "",
               "| Severidad | Findings | $/mes |", "|---|---:|---:|"]
     for sev in SEVERIDADES:
         grupo = [f for f in findings if f["severity"] == sev]
@@ -276,7 +288,10 @@ def validar(cfg, discovery, inventory, salida, sin_doctor=False, timeout_doctor=
             from common.aws import sesion_cuenta, sesion_management
             mgmt = sesion_management(cfg)
             creds_fn = lambda a: sesion_cuenta(cfg, a, mgmt).get_credentials().get_frozen_credentials()  # noqa: E731
-        f_doc, e_doc = doctor.ejecutar(cfg, discovery, salida, timeout=timeout_doctor, creds_fn=creds_fn)
+        habilitadas = {a: c["enabled_regions"] for a, c in inventory.get("accounts", {}).items()
+                       if c.get("enabled_regions")}
+        f_doc, e_doc = doctor.ejecutar(cfg, discovery, salida, timeout=timeout_doctor, creds_fn=creds_fn,
+                                       habilitadas=habilitadas)
         findings += f_doc
         errores += e_doc
 

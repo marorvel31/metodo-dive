@@ -181,7 +181,7 @@ def test_sin_aws_doctor_instalado(tmp_path, monkeypatch):
 # ---------- de punta a punta ----------
 
 def test_validar_completo(tmp_path, monkeypatch):
-    def falso_doctor(cfg, discovery, salida, timeout, creds_fn):
+    def falso_doctor(cfg, discovery, salida, timeout, creds_fn, habilitadas):
         items, _ = doctor.parsear_salida((FIX / "doctor_waste.json").read_text())
         return doctor.items_a_findings({("111111111111", "us-east-1"): items}), []
 
@@ -203,8 +203,8 @@ def test_validar_completo(tmp_path, monkeypatch):
     # vol-0001 lo marcan aws-doctor y la regla (desperdicio): queda uno solo, el de aws-doctor.
     vol = [f for f in findings if f["resource_id"] == "vol-0001" and f["category"] == "desperdicio"]
     assert len(vol) == 1 and vol[0]["source"] == "aws-doctor"
-    # gp2 es otra categoría (costo): se mantiene
-    assert any(f["resource_id"] == "vol-0001" and f["category"] == "costo" for f in findings)
+    # gp2→gp3 (costo) sobre un volumen que ya es desperdicio se descarta: el ahorro no se cuenta dos veces.
+    assert not any(f["resource_id"] == "vol-0001" and f["category"] == "costo" for f in findings)
 
     md = (tmp_path / "findings.md").read_text()
     assert "## Severidad alta" in md and "Produccion (111111111111)" in md and "sg-0001" in md

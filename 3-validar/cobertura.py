@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from common import ahora, cargar_config, carpeta_salida, escribir_json, leer_json  # noqa: E402
+from common import ahora, cargar_config, carpeta_salida, error_corto, escribir_json, leer_json  # noqa: E402
 from common.aws import client, sesion_cuenta  # noqa: E402
 
 
@@ -99,8 +99,11 @@ def main():
     ids_inv = {str(r["id"]) for r in inventory["resources"]}
 
     # Mismas regiones que se inventariaron (las que tienen costo) + us-east-1 para lo global.
+    habilitadas = {a: c["enabled_regions"] for a, c in inventory.get("accounts", {}).items()
+                   if c.get("enabled_regions")}
     tareas = sorted({(a, r if r != "global" else "us-east-1")
-                     for a, c in discovery["accounts"].items() for r in c["regions"]})
+                     for a, c in discovery["accounts"].items() for r in c["regions"]
+                     if r == "global" or a not in habilitadas or r in habilitadas[a]})
     faltantes, total, errores = defaultdict(list), Counter(), []
     with ThreadPoolExecutor(max_workers=cfg["max_workers"]) as pool:
         futuros = {pool.submit(arns_del_oraculo, cfg, a, r): (a, r) for a, r in tareas}
@@ -113,7 +116,7 @@ def main():
                     if not cubierto(arn, arns_inv, ids_inv):
                         faltantes[tipo].append({"account_id": account_id, "region": region, "arn": arn})
             except Exception as e:  # noqa: BLE001
-                errores.append({"account_id": account_id, "region": region, "error": str(e)[:300]})
+                errores.append({"account_id": account_id, "region": region, "error": error_corto(e)})
 
     # Tareas extra para la fase 2: colector × cuenta × región donde el oráculo vio algo que no inventariamos.
     tareas_extra = sorted({(f["account_id"], f["region"], colector_para(t))

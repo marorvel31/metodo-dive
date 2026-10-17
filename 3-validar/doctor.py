@@ -14,6 +14,7 @@ import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from common import error_corto, redactar
 from hallazgos import hallazgo, severidad_por_costo
 
 BINARIO = "aws-doctor"
@@ -59,7 +60,35 @@ CATEGORIAS = {
                               id=["db_snapshot_id"], costo=["estimated_monthly_cost"]),
     "idle_rds_instances": dict(titulo="Instancia RDS sin conexiones", cat="desperdicio", sev="media",
                                id=["db_instance_id"], costo=["estimated_monthly_cost"]),
+    # Categorías de aws-doctor 2.x (claves de model/output_json.go, v2.21.1).
+    "idle_load_balancers": dict(titulo="Load balancer sin tráfico", cat="desperdicio", sev="media",
+                                id=["name", "arn"], costo=["estimated_monthly_cost"]),
+    "idle_nat_gateways": dict(titulo="NAT Gateway sin tráfico", cat="desperdicio", sev="media",
+                              id=["nat_gateway_id"], costo=["estimated_monthly_cost"]),
+    "idle_ec2_instances": dict(titulo="Instancia EC2 ociosa (CPU y red bajas)", cat="desperdicio", sev="media",
+                               id=["instance_id"], costo=["estimated_monthly_cost"]),
+    "idle_sagemaker_endpoints": dict(titulo="Endpoint SageMaker sin invocaciones", cat="desperdicio", sev="media",
+                                     id=["endpoint_name", "endpoint_arn"], costo=["estimated_monthly_cost"]),
+    "over_provisioned_lambdas": dict(titulo="Lambdas con memoria sobredimensionada", cat="costo", sev="baja",
+                                     id=["function_name"], costo=[], agrupar=True),
+    "ecr_untagged_images": dict(titulo="Repositorios ECR con imágenes sin tag", cat="desperdicio", sev="baja",
+                                id=["repository_name"], costo=["estimated_monthly_cost"], agrupar=True),
+    "ecr_no_lifecycle_policies": dict(titulo="Repositorios ECR sin lifecycle policy", cat="costo", sev="baja",
+                                      id=["repository_name"], costo=[], agrupar=True),
+    "ecr_empty_repositories": dict(titulo="Repositorios ECR vacíos", cat="inventario", sev="baja",
+                                   id=["repository_name"], costo=[], agrupar=True),
+    "unused_secrets": dict(titulo="Secretos sin acceso reciente", cat="desperdicio", sev="baja",
+                           id=["name"], costo=["estimated_monthly_cost"], agrupar=True),
+    # IAM es global: aws-doctor lo repite en cada región consultada; global_ lo deja uno por cuenta.
+    "unused_iam_users": dict(titulo="Usuarios IAM sin uso", cat="riesgo", sev="media",
+                             id=["user_name"], costo=[], agrupar=True, global_=True),
+    "root_user_waste": dict(titulo="Usuario root sin MFA", cat="riesgo", sev="alta", id=[], costo=[],
+                            global_=True, id_fijo="root", incluir=lambda el: el.get("has_mfa") is False),
 }
+
+# Claves del JSON de `waste` que no son categorías de desperdicio.
+_CLAVES_NO_CATEGORIA = {"account_id", "generated_at", "has_waste", "total_estimated_monthly_cost", "errors",
+                        "summary"}
 
 # Campos del JSON que no aportan al detalle (ya son id o costo).
 _OMITIR_EN_DETALLE = {"estimated_monthly_cost", "max_potential_saving_monthly", "max_potential_savings",
@@ -122,13 +151,42 @@ def items_desde_json(datos):
     """JSON de `waste --output json` → [{clave, id, usd, info}]."""
     items = []
     for clave, conf in CATEGORIAS.items():
-        for el in datos.get(clave) or []:
-            rid = next((el.get(c) for c in conf["id"] if el.get(c)), None)
+        lista = datos.get(clave) or []
+        if not isinstance(lista, list):
+            continue  # forma inesperada: avisos_desde_json lo reporta
+        for el in lista:
+            if not isinstance(el, dict):
+                continue
+            if "incluir" in conf and not conf["incluir"](el):
+                continue
+            rid = conf.get("id_fijo") or next((el.get(c) for c in conf["id"] if el.get(c)), None)
             usd = next((_numero(el.get(c)) for c in conf["costo"] if _numero(el.get(c)) is not None), None)
             info = ", ".join(f"{k}={v}" for k, v in el.items()
                              if k not in _OMITIR_EN_DETALLE and k not in conf["id"] and v not in (None, "", [], False))
             items.append({"clave": clave, "id": rid, "usd": usd, "info": info})
     return items
+
+
+def avisos_desde_json(datos):
+    """Lo que aws-doctor reportó y no se convierte en findings: checks que fallaron (`errors`) y
+    categorías que este parser no conoce (una versión nueva de aws-doctor). Devuelve [(colector, texto)]."""
+    errores = datos.get("errors") or {}
+    if not isinstance(errores, dict):  # otra forma en una versión futura: se avisa sin romper la fase
+        errores = {"errors": errores}
+    avisos = [(f"{FUENTE}/{redactar(check, 60)}", redactar(msg)) for check, msg in sorted(errores.items())]
+    for clave in CATEGORIAS:
+        if datos.get(clave) and not isinstance(datos[clave], list):
+            avisos.append((FUENTE, f"forma inesperada en {clave}: se esperaba una lista; revisa la versión de aws-doctor"))
+    for el in datos.get("root_user_waste") or []:
+        if isinstance(el, dict) and not isinstance(el.get("has_mfa"), bool):
+            avisos.append((FUENTE, "root_user_waste sin has_mfa booleano: no se pudo evaluar el MFA del root"))
+    for clave, valor in sorted(datos.items()):
+        if clave in CATEGORIAS or clave in _CLAVES_NO_CATEGORIA or not valor:
+            continue
+        n = len(valor) if isinstance(valor, list) else 1
+        avisos.append((FUENTE, f"categoría desconocida de aws-doctor: {redactar(clave, 80)} ({n}); "
+                               "actualiza CATEGORIAS en doctor.py"))
+    return avisos
 
 
 def _clave_texto(titulo, status):
@@ -194,16 +252,23 @@ def items_desde_texto(texto):
     return items
 
 
-def parsear_salida(texto):
-    """Devuelve (items, formato). Intenta JSON; si no, tabla de texto."""
+def _cargar_json(texto):
     texto = texto or ""
     inicio = texto.find("{")
     if inicio >= 0:
         try:
-            return items_desde_json(json.loads(texto[inicio:])), "json"
+            return json.loads(texto[inicio:])
         except ValueError:
             pass
-    return items_desde_texto(texto), "texto"
+    return None
+
+
+def parsear_salida(texto):
+    """Devuelve (items, formato). Intenta JSON; si no, tabla de texto."""
+    datos = _cargar_json(texto)
+    if isinstance(datos, dict):
+        return items_desde_json(datos), "json"
+    return items_desde_texto(texto or ""), "texto"
 
 
 # ---------- items → findings ----------
@@ -252,26 +317,33 @@ def _entorno(cfg, account_id, env_base, creds_fn):
 
 
 def correr_uno(cfg, account_id, region, carpeta, env, timeout):
-    """Ejecuta aws-doctor para una cuenta × región y guarda la salida cruda. Devuelve (items, error)."""
+    """Ejecuta aws-doctor para una cuenta × región y guarda la salida cruda.
+    Devuelve (items, error, avisos); avisos = [(colector, texto)] de avisos_desde_json."""
     cmd = comando(account_id, region, cfg["access_mode"])
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout)
     except subprocess.TimeoutExpired:
-        return [], f"timeout ({timeout}s)"
+        return [], f"timeout ({timeout}s)", []
     except OSError as e:
-        return [], f"{type(e).__name__}: {e}"
+        return [], error_corto(e), []
 
     items, formato = parsear_salida(proc.stdout)
+    avisos = avisos_desde_json(_cargar_json(proc.stdout)) if formato == "json" else []
     extension = "json" if formato == "json" else "txt"
     crudo = proc.stdout if proc.returncode == 0 else f"{proc.stdout}\n--- stderr ---\n{proc.stderr}"
     (carpeta / f"{account_id}_{region}.{extension}").write_text(crudo)
     if proc.returncode != 0:
-        return items, f"exit {proc.returncode}: {(proc.stderr or proc.stdout).strip()[:300]}"
-    return items, None
+        return items, f"exit {proc.returncode}: {redactar(proc.stderr or proc.stdout)}", avisos
+    return items, None, avisos
 
 
-def ejecutar(cfg, discovery, salida, timeout=900, creds_fn=None):
-    """Corre aws-doctor en paralelo sobre cada cuenta × región con costo. Devuelve (findings, errores)."""
+def ejecutar(cfg, discovery, salida, timeout=900, creds_fn=None, habilitadas=None):
+    """Corre aws-doctor en paralelo sobre cada cuenta × región con costo. Devuelve (findings, errores).
+
+    `habilitadas` = {account_id: [regiones]} (de inventory.json): las regiones no habilitadas se omiten,
+    porque ahí aws-doctor solo agota reintentos. Una cuenta sin lista no se filtra.
+    """
+    habilitadas = habilitadas or {}
     if not disponible():
         print("⚠ aws-doctor no está instalado (brew install elC0mpa/homebrew-tap/aws-doctor); sigo sin él.")
         return [], [{"account_id": None, "region": None, "collector": FUENTE, "error": "aws-doctor no instalado"}]
@@ -286,7 +358,8 @@ def ejecutar(cfg, discovery, salida, timeout=900, creds_fn=None):
 
     carpeta = salida / "aws-doctor"
     carpeta.mkdir(parents=True, exist_ok=True)
-    tareas = [(a, r) for a, c in discovery["accounts"].items() for r in c.get("regions", {}) if r != "global"]
+    tareas = [(a, r) for a, c in discovery["accounts"].items() for r in c.get("regions", {})
+              if r != "global" and (a not in habilitadas or r in habilitadas[a])]
     print(f"aws-doctor: {len(tareas)} corridas (cuenta × región)")
 
     items, errores = {}, []
@@ -296,15 +369,27 @@ def ejecutar(cfg, discovery, salida, timeout=900, creds_fn=None):
             try:
                 env = _entorno(cfg, account_id, env_base, creds_fn)
             except Exception as e:  # noqa: BLE001 — una cuenta sin acceso no detiene la corrida
-                errores.append({"account_id": account_id, "region": region, "collector": FUENTE, "error": str(e)[:300]})
+                errores.append({"account_id": account_id, "region": region, "collector": FUENTE,
+                                "error": error_corto(e)})
                 continue
             futuros[pool.submit(correr_uno, cfg, account_id, region, carpeta, env, timeout)] = (account_id, region)
+        avisos_vistos = set()
         for i, fut in enumerate(as_completed(futuros), 1):
             account_id, region = futuros[fut]
-            encontrados, error = fut.result()
+            try:
+                encontrados, error, avisos = fut.result()
+            except Exception as e:  # noqa: BLE001 — una salida inesperada de aws-doctor no tumba la fase
+                encontrados, error, avisos = [], f"no se pudo procesar la salida: {error_corto(e)}", []
             items[(account_id, region)] = encontrados
             if error:
                 errores.append({"account_id": account_id, "region": region, "collector": FUENTE, "error": error})
+            for colector, texto in avisos:
+                # Una categoría desconocida se avisa una sola vez; un check fallido, por cuenta × región.
+                llave = texto if texto.startswith("categoría desconocida") else (account_id, region, colector, texto)
+                if llave in avisos_vistos:
+                    continue
+                avisos_vistos.add(llave)
+                errores.append({"account_id": account_id, "region": region, "collector": colector, "error": texto})
             if i % 10 == 0 or i == len(futuros):
                 print(f"  {i}/{len(futuros)} corridas · {len(errores)} errores")
     return items_a_findings(items), errores

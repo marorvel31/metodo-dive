@@ -45,7 +45,8 @@ setup/  →  1-descubrir → discovery.json
 }
 ```
 
-- La región `global` agrupa lo que Cost Explorer reporta como `NoRegion`/`global`.
+- La región `global` agrupa lo que Cost Explorer reporta como `NoRegion`/`global`, y también los servicios globales que Cost Explorer reparte por región de edge (`Amazon CloudFront`): si no, cada edge parece una región con recursos.
+- `errors`: consultas de Cost Explorer que fallaron, `[{"region", "error"}]`. Vacío si todo fue bien.
 - `services` usa el nombre exacto de la dimensión `SERVICE` de Cost Explorer.
 - Solo cuenta registros de **uso** (`Usage`, `DiscountedUsage`, `SavingsPlanCoveredUsage`). Las cuotas de RIs/Savings Plans no son recursos y se excluyen.
 - `services_monthly_usd` permite saber si un servicio se sigue cobrando en el último mes o dejó de cobrarse (recurso ya borrado).
@@ -76,6 +77,8 @@ setup/  →  1-descubrir → discovery.json
 }
 ```
 
+- `accounts.<id>.enabled_regions`: regiones habilitadas en la cuenta (`ec2:DescribeRegions`). Falta si la consulta falló; en ese caso no se filtra nada.
+- `skipped`: `[{"account_id", "region", "reason": "region_not_enabled"}]`, cuenta × región con costo donde no se escaneó porque la región (opt-in) no está habilitada. No son errores.
 - `service`: nombre corto del colector (`ec2`, `rds`, `vpc`...). `type`: subtipo (`instance`, `volume`, `security_group`...).
 - `name`: tag `Name` o el nombre propio del recurso; `null` si no tiene.
 - `relations` solo lleva IDs, y solo las claves que apliquen: `vpc_id`, `subnet_ids`, `security_group_ids`, `target_ids`, `attached_to`.
@@ -114,6 +117,10 @@ def collect(session, region, account_id):
       "monthly_usd": 12.5,
       "source": "aws-doctor | cruce-billing | regla"
     }
-  ]
+  ],
+  "errors": [{"account_id": "123456789012", "region": "eu-west-1", "collector": "aws-doctor/Lambda", "error": "..."}]
 }
 ```
+
+- `errors`: corridas de aws-doctor que fallaron, checks de aws-doctor que fallaron (`aws-doctor/<check>`) y categorías de aws-doctor que `doctor.py` no conoce (señal de que hay que actualizar `CATEGORIAS`).
+- Si un recurso tiene un finding de `desperdicio`, sus findings de `costo` se descartan: el ahorro es borrarlo, no optimizarlo. Los totales de `findings.md` y `reporte.html` suman solo `desperdicio` + `costo`.

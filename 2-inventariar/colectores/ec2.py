@@ -28,6 +28,8 @@ def collect(session, region, account_id):
                         "private_ip": i.get("PrivateIpAddress"),
                         "public_ip": i.get("PublicIpAddress"),
                         "launch_time": i.get("LaunchTime"),
+                        # "User initiated (2025-01-31 10:00:00 GMT)": de aquí sale la fecha de detención.
+                        "state_transition_reason": i.get("StateTransitionReason") or None,
                         "iam_profile": (i.get("IamInstanceProfile") or {}).get("Arn"),
                         "lifecycle": i.get("InstanceLifecycle", "on-demand"),
                     },

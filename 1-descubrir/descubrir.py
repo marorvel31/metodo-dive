@@ -21,7 +21,7 @@ from pathlib import Path
 AQUI = Path(__file__).resolve().parent
 sys.path.insert(0, str(AQUI.parent))
 
-from common import SERVICIOS_GOBIERNO, ahora, cargar_config, carpeta_salida, escribir_json  # noqa: E402
+from common import SERVICIOS_GOBIERNO, ahora, cargar_config, carpeta_salida, error_corto, escribir_json  # noqa: E402
 from common.aws import client, listar_cuentas, sesion_management  # noqa: E402
 
 # Solo cuenta el USO de recursos. Se dejan fuera impuestos, créditos y sobre todo las cuotas de
@@ -43,6 +43,11 @@ SERVICIOS_NO_RECURSOS = [
     "AWS Support (Enterprise On-Ramp)",
     "AWS Business Support+",
 ]
+
+# Servicios globales que Cost Explorer reparte por la región del edge que sirvió el tráfico
+# (CloudFront factura en sa-east-1, me-south-1, af-south-1...). Su costo va a "global": si no,
+# aparecen como "regiones sorpresa" y la fase 2 escanea regiones donde no hay nada (a veces ni habilitadas).
+SERVICIOS_GLOBALES = {"Amazon CloudFront"}
 
 # Valores de la dimensión REGION que se agrupan como "global".
 REGIONES_GLOBALES = {"", "NoRegion", "global", "Global"}
@@ -131,12 +136,13 @@ def descubrir(ce, cuentas, cfg, hoy=None):
             filas = consultar(ce, inicio, fin, ["LINKED_ACCOUNT", "SERVICE"],
                               filtro_base(incluir, cruda), contador)
         except Exception as e:  # noqa: BLE001 — una región fallida no detiene la corrida
-            errores.append({"region": cruda, "error": f"{type(e).__name__}: {str(e)[:300]}"})
+            errores.append({"region": cruda, "error": error_corto(e)})
             continue
         region = normalizar_region(cruda)
         for mes, cuenta, servicio, usd in filas:
             if cuenta in cuentas and servicio not in SERVICIOS_NO_RECURSOS:
-                costos[cuenta][region][servicio][mes] += usd
+                destino = "global" if servicio in SERVICIOS_GLOBALES else region
+                costos[cuenta][destino][servicio][mes] += usd
 
     # 3) Umbral por servicio (sobre el total del periodo) y forma del CONTRATO.
     salida_cuentas = {}
@@ -171,6 +177,7 @@ def descubrir(ce, cuentas, cfg, hoy=None):
         "period": {"start": inicio.isoformat(), "end": fin.isoformat(), "months": meses},
         "threshold_usd": umbral,
         "accounts": salida_cuentas,
+        "errors": errores,
     }
     return discovery, contador["llamadas"], errores
 
