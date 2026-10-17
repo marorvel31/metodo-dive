@@ -65,6 +65,8 @@ export DIVE_CONFIG=dive.config.yaml            # o la ruta a la config de cada o
 
 Las salidas quedan en `salida/<fecha>/` (ignorada por git). Si trabajas para un cliente, apunta `output_dir` fuera del repo.
 
+Para ver el resultado sin correr nada, abre `ejemplos/`: una organización sintética de 4 cuentas con su `reporte.html` (funciona offline) y los diagramas `.drawio`.
+
 ## Cobertura: qué tan completo es el inventario
 
 `3-validar/cobertura.py` compara el inventario contra la Tagging API, un oráculo independiente de los colectores, y genera `tareas_extra` para volver a correr la fase 2 sobre lo que el billing no mostró (típicamente lo que está en free tier).
