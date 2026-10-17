@@ -1,0 +1,50 @@
+{
+  "generated_at": "2026-09-26T15:20:00Z",
+  "accounts": {"111111111111": {"name": "Produccion"}, "222222222222": {"name": "Desarrollo"}},
+  "scanned": [
+    {"account_id": "111111111111", "region": "us-east-1", "collector": "ec2", "count": 2, "seconds": 1.0},
+    {"account_id": "111111111111", "region": "us-east-1", "collector": "ebs", "count": 4, "seconds": 1.0},
+    {"account_id": "111111111111", "region": "eu-west-1", "collector": "kms", "count": 0, "seconds": 1.0},
+    {"account_id": "111111111111", "region": "us-east-1", "collector": "s3", "count": 2, "seconds": 1.0},
+    {"account_id": "222222222222", "region": "us-east-1", "collector": "ec2", "count": 1, "seconds": 1.0}
+  ],
+  "resources": [
+    {"account_id": "111111111111", "region": "us-east-1", "service": "ec2", "type": "instance", "id": "i-0aaa", "arn": null, "name": "api-1", "state": "running",
+     "tags": {"Owner": "equipo-a", "Environment": "prod"}, "attrs": {"instance_type": "t3.large"}, "relations": {}},
+    {"account_id": "111111111111", "region": "us-east-1", "service": "ec2", "type": "instance", "id": "i-0bbb", "arn": null, "name": "viejo", "state": "stopped",
+     "tags": {}, "attrs": {"state_transition_reason": "User initiated (2026-06-01 10:00:00 GMT)"}, "relations": {}},
+    {"account_id": "111111111111", "region": "us-east-1", "service": "ebs", "type": "volume", "id": "vol-0001", "arn": null, "name": null, "state": "available",
+     "tags": {}, "attrs": {"size_gb": 100, "volume_type": "gp2", "encrypted": false}, "relations": {}},
+    {"account_id": "111111111111", "region": "us-east-1", "service": "ebs", "type": "volume", "id": "vol-0002", "arn": null, "name": null, "state": "in-use",
+     "tags": {"owner": "x", "env": "prod"}, "attrs": {"size_gb": 50, "volume_type": "gp3"}, "relations": {"attached_to": ["i-0aaa"]}},
+    {"account_id": "111111111111", "region": "us-east-1", "service": "ebs", "type": "snapshot", "id": "snap-0001", "arn": null, "name": null, "state": "completed",
+     "tags": {}, "attrs": {"size_gb": 20, "start_time": "2025-01-01 00:00:00+00:00"}, "relations": {}},
+    {"account_id": "111111111111", "region": "us-east-1", "service": "ebs", "type": "snapshot", "id": "snap-0002", "arn": null, "name": null, "state": "completed",
+     "tags": {}, "attrs": {"size_gb": 20, "start_time": "2026-09-01T00:00:00Z"}, "relations": {}},
+    {"account_id": "111111111111", "region": "us-east-1", "service": "eip", "type": "elastic_ip", "id": "eipalloc-0001", "arn": null, "name": null, "state": "unassociated",
+     "tags": {}, "attrs": {"public_ip": "203.0.113.10", "associated": false}, "relations": {}},
+    {"account_id": "111111111111", "region": "us-east-1", "service": "eip", "type": "elastic_ip", "id": "eipalloc-0002", "arn": null, "name": null, "state": "associated",
+     "tags": {}, "attrs": {"public_ip": "203.0.113.11", "associated": true}, "relations": {}},
+    {"account_id": "111111111111", "region": "us-east-1", "service": "vpc", "type": "security_group", "id": "sg-0001", "arn": null, "name": "bastion", "state": null,
+     "tags": {}, "attrs": {"open_to_world": true, "open_to_world_ports": ["tcp/22", "tcp/443"]}, "relations": {}},
+    {"account_id": "111111111111", "region": "us-east-1", "service": "vpc", "type": "security_group", "id": "sg-0002", "arn": null, "name": "web", "state": null,
+     "tags": {}, "attrs": {"open_to_world": true, "open_to_world_ports": ["tcp/443", "tcp/80"]}, "relations": {}},
+    {"account_id": "111111111111", "region": "us-east-1", "service": "vpc", "type": "security_group", "id": "sg-0003", "arn": null, "name": "app", "state": null,
+     "tags": {}, "attrs": {"open_to_world": true, "ingress": [{"protocol": "tcp", "ports": "8080", "source": "0.0.0.0/0"}]}, "relations": {}},
+    {"account_id": "111111111111", "region": "us-east-1", "service": "opensearch", "type": "domain", "id": "logs-dom", "arn": null, "name": "logs-dom", "state": "active",
+     "tags": {}, "attrs": {"access_policy_principal_star": true, "in_vpc": false, "fine_grained_access": false}, "relations": {}},
+    {"account_id": "111111111111", "region": "us-east-1", "service": "s3", "type": "bucket", "id": "bucket-a", "arn": null, "name": "bucket-a", "state": null,
+     "tags": {}, "attrs": {"public_access_block": null, "public_access_fully_blocked": false}, "relations": {}},
+    {"account_id": "111111111111", "region": "us-east-1", "service": "s3", "type": "bucket", "id": "bucket-b", "arn": null, "name": "bucket-b", "state": null,
+     "tags": {}, "attrs": {"public_access_fully_blocked": true}, "relations": {}},
+    {"account_id": "222222222222", "region": "us-east-1", "service": "ec2", "type": "instance", "id": "i-0ccc", "arn": null, "name": "dev-1", "state": "running",
+     "tags": {"Owner": "equipo-b", "Environment": "dev"}, "attrs": {}, "relations": {}},
+    {"account_id": "222222222222", "region": "us-east-1", "service": "rds", "type": "instance", "id": "db-dev", "arn": null, "name": "db-dev", "state": "available",
+     "tags": {"Owner": "equipo-b", "Environment": "dev"}, "attrs": {"engine": "postgres", "publicly_accessible": true, "storage_encrypted": false}, "relations": {}},
+    {"account_id": "222222222222", "region": "us-east-1", "service": "rds", "type": "instance", "id": "db-miembro", "arn": null, "name": "db-miembro", "state": "available",
+     "tags": {"Owner": "equipo-b", "Environment": "dev"}, "attrs": {"engine": "aurora-mysql", "publicly_accessible": false, "storage_encrypted": false, "cluster_id": "cl-1"}, "relations": {}}
+  ],
+  "errors": [
+    {"account_id": "111111111111", "region": "us-east-1", "collector": "rds", "error": "AccessDenied: sin permiso rds:DescribeDBInstances"}
+  ]
+}

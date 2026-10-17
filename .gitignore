@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+salida/
+*.mapping.json
+.DS_Store
+dive.config.yaml

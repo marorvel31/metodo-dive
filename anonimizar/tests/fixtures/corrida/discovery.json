@@ -1,0 +1,29 @@
+{
+  "generated_at": "2026-09-26T15:00:00Z",
+  "period": {"start": "2026-03-01", "end": "2026-09-01", "months": 6},
+  "threshold_usd": 0.01,
+  "accounts": {
+    "111122223333": {
+      "name": "Acme Prod",
+      "total_usd": 1234.56,
+      "regions": {
+        "us-east-1": {
+          "total_usd": 1000.0,
+          "services": {"Amazon Elastic Compute Cloud - Compute": 600.0, "Amazon Relational Database Service": 400.0},
+          "monthly_usd": {"2026-03": 160.0, "2026-04": 170.0}
+        },
+        "global": {"total_usd": 234.56, "services": {"Amazon Route 53": 234.56}, "monthly_usd": {}}
+      }
+    },
+    "444455556666": {
+      "name": "ACMEPAY-Shared-Services",
+      "total_usd": 765.44,
+      "regions": {"us-east-2": {"total_usd": 765.44, "services": {"AWS Lambda": 765.44}, "monthly_usd": {}}}
+    },
+    "777788889999": {
+      "name": "Dev",
+      "total_usd": 0,
+      "regions": {}
+    }
+  }
+}

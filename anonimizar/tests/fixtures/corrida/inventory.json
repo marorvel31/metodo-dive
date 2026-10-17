@@ -1,0 +1,373 @@
+{
+  "generated_at": "2026-09-26T15:20:00Z",
+  "accounts": {
+    "111122223333": {
+      "name": "Acme Prod"
+    },
+    "444455556666": {
+      "name": "ACMEPAY-Shared-Services"
+    },
+    "777788889999": {
+      "name": "Dev"
+    }
+  },
+  "scanned": [
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "collector": "ec2",
+      "count": 4,
+      "seconds": 1.2
+    }
+  ],
+  "resources": [
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "ec2",
+      "type": "instance",
+      "id": "i-0abc1234def567890",
+      "arn": "arn:aws:ec2:us-east-1:111122223333:instance/i-0abc1234def567890",
+      "name": "acme-api-prod-1",
+      "state": "running",
+      "tags": {
+        "Environment": "prod",
+        "Owner": "ops@acme.com",
+        "Project": "AcMe Pagos"
+      },
+      "attrs": {
+        "instance_type": "t3.large",
+        "private_ip": "10.0.1.10",
+        "public_ip": "34.201.18.9",
+        "public_dns": "ec2-34-201-18-9.compute-1.amazonaws.com",
+        "private_dns": "ip-10-0-1-10.ec2.internal"
+      },
+      "relations": {
+        "vpc_id": "vpc-0a1b2c3d",
+        "subnet_ids": [
+          "subnet-0123abcd"
+        ],
+        "security_group_ids": [
+          "sg-0fedcba987654321a"
+        ]
+      }
+    },
+    {
+      "account_id": "444455556666",
+      "region": "us-east-2",
+      "service": "lambda",
+      "type": "function",
+      "id": "AcmePay-api-prod",
+      "arn": "arn:aws:lambda:us-east-2:444455556666:function:AcmePay-api-prod",
+      "name": "api-pagos-prod",
+      "state": "Active",
+      "tags": {},
+      "attrs": {
+        "runtime": "python3.13",
+        "role": "arn:aws:iam::444455556666:role/acmepay-lambda-role"
+      },
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "apigateway",
+      "type": "rest_api",
+      "id": "p7r2kd9xw4",
+      "arn": "arn:aws:apigateway:us-east-1::/restapis/p7r2kd9xw4",
+      "name": "acme-public-api",
+      "state": null,
+      "tags": {},
+      "attrs": {
+        "endpoint": "https://p7r2kd9xw4.execute-api.us-east-1.amazonaws.com/prod"
+      },
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "elbv2",
+      "type": "load_balancer",
+      "id": "acme-alb",
+      "arn": "arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/acme-alb/50dc6c495c0c9188",
+      "name": "acme-alb",
+      "state": "active",
+      "tags": {},
+      "attrs": {
+        "dns_name": "internal-acme-alb-1234567890.us-east-1.elb.amazonaws.com",
+        "cert": "arn:aws:acm:us-east-1:111122223333:certificate/12345678-90ab-cdef-1234-567890abcdef"
+      },
+      "relations": {
+        "vpc_id": "vpc-0a1b2c3d"
+      }
+    },
+    {
+      "account_id": "111122223333",
+      "region": "global",
+      "service": "route53",
+      "type": "hosted_zone",
+      "id": "Z0123456789ABCDEFGHIJ",
+      "arn": null,
+      "name": "pagos.acme.com.",
+      "state": null,
+      "tags": {},
+      "attrs": {
+        "records": [
+          "api.pagos.acme.com",
+          "admin.acme-corp.co"
+        ]
+      },
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "rds",
+      "type": "db_instance",
+      "id": "db-ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+      "arn": "arn:aws:rds:us-east-1:111122223333:db:acme-ledger",
+      "name": "acme-ledger",
+      "state": "available",
+      "tags": {},
+      "attrs": {
+        "endpoint": "acme-ledger.c9akciq32xyz.us-east-1.rds.amazonaws.com",
+        "cidr": "172.16.5.0/24"
+      },
+      "relations": {
+        "security_group_ids": [
+          "sg-0fedcba987654321a"
+        ]
+      }
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "rds",
+      "type": "db_instance",
+      "id": "appstack-dev-database4f1a9c2e-q1w2e3r4t5y6",
+      "arn": "arn:aws:rds:us-east-1:111122223333:db:appstack-dev-database4f1a9c2e-q1w2e3r4t5y6",
+      "name": "appstack-dev-database4f1a9c2e-q1w2e3r4t5y6",
+      "state": null,
+      "tags": {
+        "aws:cloudformation:logical-id": "Database4F1A9C2E"
+      },
+      "attrs": {},
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "ecs",
+      "type": "service",
+      "id": "PortalStack-uat-Service4C7E20B1-Q1W2E3R4T5Y6",
+      "arn": null,
+      "name": "PortalStack-uat-Service4C7E20B1-Q1W2E3R4T5Y6",
+      "state": null,
+      "tags": {
+        "aws:cloudformation:logical-id": "Service4C7E20B1"
+      },
+      "attrs": {},
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "secretsmanager",
+      "type": "secret",
+      "id": "AppStackdevDatabaseSecret7B3D90F23fdaad7efa858a3daf9490cf0a702aeb",
+      "arn": null,
+      "name": null,
+      "state": null,
+      "tags": {},
+      "attrs": {},
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "ecs",
+      "type": "service",
+      "id": "WebLBA7C1D2E9",
+      "arn": null,
+      "name": "WebLBA7C1D2E9",
+      "state": null,
+      "tags": {},
+      "attrs": {},
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "elbv2",
+      "type": "load_balancer",
+      "id": "awseb--AWSEB-Zx9Kq2Lm7Np4",
+      "arn": "arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/awseb--AWSEB-Zx9Kq2Lm7Np4/9f8e7d6c5b4a3921",
+      "name": "awseb--AWSEB-Zx9Kq2Lm7Np4",
+      "state": null,
+      "tags": {},
+      "attrs": {},
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "autoscaling",
+      "type": "group",
+      "id": "awseb-e-a1b2c3d4e5-stack-AWSEBAutoScalingGroup-hT7wQpZ2mXv9",
+      "arn": null,
+      "name": null,
+      "state": null,
+      "tags": {},
+      "attrs": {},
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "route53",
+      "type": "hosted_zone",
+      "id": "Z09876543ABCDEFGHJKLM",
+      "arn": null,
+      "name": "interno.acme.com.",
+      "state": null,
+      "tags": {},
+      "attrs": {
+        "arn_like": "/hostedzone/Z09876543ABCDEFGHJKLM"
+      },
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "secretsmanager",
+      "type": "secret",
+      "id": "s2svpn!vpn-0a1b2c3d4e5f60718-Ab3xYz",
+      "arn": "arn:aws:secretsmanager:us-east-1:111122223333:secret:s2svpn!vpn-0a1b2c3d4e5f60718-Ab3xYz-Qr7TuV",
+      "name": "s2svpn!vpn-0a1b2c3d4e5f60718-Ab3xYz",
+      "state": null,
+      "tags": {},
+      "attrs": {},
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "secretsmanager",
+      "type": "secret",
+      "id": "acme-pos/cert.pem",
+      "arn": "arn:aws:secretsmanager:us-east-1:111122223333:secret:acme-pos/cert.pem-Kd8sPq",
+      "name": "acme-pos/cert.pem",
+      "state": null,
+      "tags": {},
+      "attrs": {},
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "backup",
+      "type": "recovery_point",
+      "id": "rp-1",
+      "arn": null,
+      "name": "AwsBackup_i-0abc1234def567890_0f1e2d3c-4b5a-4968-8776-655443322110",
+      "state": null,
+      "tags": {},
+      "attrs": {
+        "version_id": "MGYxZTJkM2MtNGI1YS00OTY4LTg3NzYtNjU1NDQzMzIyMTEw"
+      },
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "iam",
+      "type": "role",
+      "id": "r1",
+      "arn": "arn:aws:iam::111122223333:role/AppStack-dev-JobFnServiceRole58120937-zq8w4e2r6t1y",
+      "name": null,
+      "state": null,
+      "tags": {},
+      "attrs": {},
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "iam",
+      "type": "role",
+      "id": "r2",
+      "arn": "arn:aws:iam::111122223333:role/AppStack-dev-LoaderFnServiceRole5AE19D3-Pd3kx9Lm2Qw5",
+      "name": null,
+      "state": null,
+      "tags": {},
+      "attrs": {},
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "iam",
+      "type": "role",
+      "id": "r3",
+      "arn": "arn:aws:iam::111122223333:role/service-role/acme-inbound-role-m3t8zq5c",
+      "name": null,
+      "state": null,
+      "tags": {},
+      "attrs": {},
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "logs",
+      "type": "log_group",
+      "id": "term-x100-7H123456",
+      "arn": null,
+      "name": "term-x100-7H123456",
+      "state": null,
+      "tags": {},
+      "attrs": {},
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "events",
+      "type": "rule",
+      "id": "r4",
+      "arn": "arn:aws:events:us-east-1:111122223333:rule/AWSQuickSetup-Scheduler-StartEC2Rule-2r4k9",
+      "name": null,
+      "state": null,
+      "tags": {},
+      "attrs": {},
+      "relations": {}
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "service": "apigatewayv2",
+      "type": "api",
+      "id": "k2m4n6p8q0",
+      "arn": "arn:aws:apigateway:us-east-1::/apis/k2m4n6p8q0/stages/$default",
+      "name": null,
+      "state": null,
+      "tags": {},
+      "attrs": {},
+      "relations": {}
+    }
+  ],
+  "errors": [
+    {
+      "account_id": "777788889999",
+      "region": "eu-west-1",
+      "collector": "rds",
+      "error": "AccessDenied: User arn:aws:sts::777788889999:assumed-role/DIVE_ReadOnly/x is not authorized"
+    },
+    {
+      "account_id": "111122223333",
+      "region": "us-east-1",
+      "collector": "s3",
+      "error": "https response error StatusCode: 403, RequestID: 8QWERTY12ASDF34G, HostID: Ab3dE5gH7jK9mN1pQ3sT5vW7yZ9bC1eF3hJ5kL7nP9rS1uV3xZ5=, api error AccessDenied"
+    }
+  ]
+}

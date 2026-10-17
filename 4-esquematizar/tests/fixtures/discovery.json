@@ -1,0 +1,130 @@
+{
+  "generated_at": "2026-09-26T15:00:00Z",
+  "period": {
+    "start": "2026-03-01",
+    "end": "2026-09-01",
+    "months": 6
+  },
+  "threshold_usd": 0.01,
+  "accounts": {
+    "111111111111": {
+      "name": "Red Central",
+      "total_usd": 1450.3,
+      "regions": {
+        "us-east-1": {
+          "total_usd": 1420.3,
+          "services": {
+            "Amazon Virtual Private Cloud": 820.0,
+            "EC2 - Other": 410.3,
+            "Amazon Elastic Compute Cloud - Compute": 190.0
+          },
+          "monthly_usd": {
+            "2026-03": 236.72,
+            "2026-04": 236.72,
+            "2026-05": 236.72,
+            "2026-06": 236.72,
+            "2026-07": 236.72,
+            "2026-08": 236.72
+          }
+        },
+        "global": {
+          "total_usd": 30.0,
+          "services": {
+            "Amazon Route 53": 30.0
+          },
+          "monthly_usd": {
+            "2026-03": 5.0,
+            "2026-04": 5.0,
+            "2026-05": 5.0,
+            "2026-06": 5.0,
+            "2026-07": 5.0,
+            "2026-08": 5.0
+          }
+        }
+      }
+    },
+    "222222222222": {
+      "name": "Produccion",
+      "total_usd": 18230.75,
+      "regions": {
+        "us-east-1": {
+          "total_usd": 16100.75,
+          "services": {
+            "Amazon Elastic Compute Cloud - Compute": 9100.0,
+            "Amazon Relational Database Service": 3900.0,
+            "Amazon Elastic Container Service": 1200.0,
+            "Amazon Elastic Load Balancing": 700.0,
+            "Amazon Simple Storage Service": 600.75,
+            "AWS Lambda": 120.0,
+            "Amazon DynamoDB": 480.0
+          },
+          "monthly_usd": {
+            "2026-03": 2683.46,
+            "2026-04": 2683.46,
+            "2026-05": 2683.46,
+            "2026-06": 2683.46,
+            "2026-07": 2683.46,
+            "2026-08": 2683.46
+          }
+        },
+        "us-west-2": {
+          "total_usd": 2130.0,
+          "services": {
+            "Amazon Relational Database Service": 1900.0,
+            "Amazon Simple Storage Service": 230.0
+          },
+          "monthly_usd": {
+            "2026-03": 355.0,
+            "2026-04": 355.0,
+            "2026-05": 355.0,
+            "2026-06": 355.0,
+            "2026-07": 355.0,
+            "2026-08": 355.0
+          }
+        }
+      }
+    },
+    "333333333333": {
+      "name": "Desarrollo",
+      "total_usd": 640.1,
+      "regions": {
+        "us-east-1": {
+          "total_usd": 640.1,
+          "services": {
+            "Amazon Elastic Compute Cloud - Compute": 300.0,
+            "Amazon Relational Database Service": 320.1,
+            "Amazon Simple Queue Service": 20.0
+          },
+          "monthly_usd": {
+            "2026-03": 106.68,
+            "2026-04": 106.68,
+            "2026-05": 106.68,
+            "2026-06": 106.68,
+            "2026-07": 106.68,
+            "2026-08": 106.68
+          }
+        }
+      }
+    },
+    "444444444444": {
+      "name": "Sandbox",
+      "total_usd": 0.42,
+      "regions": {
+        "us-east-1": {
+          "total_usd": 0.42,
+          "services": {
+            "AWS Key Management Service": 0.42
+          },
+          "monthly_usd": {
+            "2026-03": 0.07,
+            "2026-04": 0.07,
+            "2026-05": 0.07,
+            "2026-06": 0.07,
+            "2026-07": 0.07,
+            "2026-08": 0.07
+          }
+        }
+      }
+    }
+  }
+}

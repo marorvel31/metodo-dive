@@ -1,0 +1,89 @@
+{
+  "generated_at": "2026-09-26T15:40:00Z",
+  "findings": [
+    {
+      "id": "F001",
+      "category": "riesgo",
+      "severity": "alta",
+      "account_id": "333333333333",
+      "region": "us-east-1",
+      "resource_id": "dev-db",
+      "title": "RDS con acceso público",
+      "detail": "publicly_accessible=true en una base de datos.",
+      "monthly_usd": null,
+      "source": "regla"
+    },
+    {
+      "id": "F002",
+      "category": "riesgo",
+      "severity": "alta",
+      "account_id": "222222222222",
+      "region": "us-east-1",
+      "resource_id": "i-0wrk07",
+      "title": "Instancia con IMDSv1 habilitado",
+      "detail": "HttpTokens=optional.",
+      "monthly_usd": null,
+      "source": "regla"
+    },
+    {
+      "id": "F003",
+      "category": "desperdicio",
+      "severity": "media",
+      "account_id": "222222222222",
+      "region": "us-east-1",
+      "resource_id": "vol-0huerfano",
+      "title": "Volumen EBS sin adjuntar",
+      "detail": "200 GB gp2 en estado available.",
+      "monthly_usd": 20.0,
+      "source": "aws-doctor"
+    },
+    {
+      "id": "F004",
+      "category": "desperdicio",
+      "severity": "media",
+      "account_id": "222222222222",
+      "region": "us-east-1",
+      "resource_id": "i-0legacy",
+      "title": "Instancia detenida hace más de 90 días",
+      "detail": "Sigue pagando EBS.",
+      "monthly_usd": 8.0,
+      "source": "regla"
+    },
+    {
+      "id": "F005",
+      "category": "riesgo",
+      "severity": "alta",
+      "account_id": "111111111111",
+      "region": "us-east-1",
+      "resource_id": "i-0bastion",
+      "title": "Bastión con SSH abierto a 0.0.0.0/0",
+      "detail": "sg-0hubdef permite 22/tcp desde internet.",
+      "monthly_usd": null,
+      "source": "regla"
+    },
+    {
+      "id": "F006",
+      "category": "costo",
+      "severity": "baja",
+      "account_id": "222222222222",
+      "region": "us-east-1",
+      "resource_id": "prod-logs",
+      "title": "Bucket sin regla de ciclo de vida",
+      "detail": "Logs sin expiración.",
+      "monthly_usd": 3.5,
+      "source": "regla"
+    },
+    {
+      "id": "F007",
+      "category": "inventario",
+      "severity": "baja",
+      "account_id": "222222222222",
+      "region": "us-west-2",
+      "resource_id": null,
+      "title": "Costo de CloudWatch sin recurso inventariado",
+      "detail": "Cruce billing vs inventario.",
+      "monthly_usd": 1.2,
+      "source": "cruce-billing"
+    }
+  ]
+}

@@ -1,0 +1,1184 @@
+<title>Método DIVE Visual</title>
+<meta name="description" content="Inventario de una AWS Organization en una tarde, con IA como copiloto y sin permisos de escritura.">
+<link rel="icon" type="image/png" href="../favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700;800;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Los tokens de color cambian con la profundidad. Registrarlos con @property permite que el
+   texto pase de oscuro (superficie) a claro (abismo) con una transición suave. */
+@property --texto{syntax:"<color>";inherits:true;initial-value:#e6f4f4}
+@property --suave{syntax:"<color>";inherits:true;initial-value:#9fc1c8}
+@property --tenue{syntax:"<color>";inherits:true;initial-value:#6f93a0}
+@property --aqua{syntax:"<color>";inherits:true;initial-value:#82cfce}
+@property --aqua-claro{syntax:"<color>";inherits:true;initial-value:#c6eded}
+@property --arena{syntax:"<color>";inherits:true;initial-value:#faefe6}
+@property --coral-claro{syntax:"<color>";inherits:true;initial-value:#efa59f}
+@property --ok{syntax:"<color>";inherits:true;initial-value:#7fd1a3}
+@property --borde{syntax:"<color>";inherits:true;initial-value:#2c4f62}
+@property --panel{syntax:"<color>";inherits:true;initial-value:rgba(30,58,74,.55)}
+@property --sobre-acento{syntax:"<color>";inherits:true;initial-value:#000c16}
+@property --hud-fondo{syntax:"<color>";inherits:true;initial-value:rgba(0,12,22,.55)}
+
+:root{
+  color-scheme: dark;
+  --abismo:#000c16;
+  --mar:#001c30;
+  --mar-2:#0b2a3d;
+  --superficie:#1e3a4a;
+  --coral:#d9667e;
+  /* zona profunda por defecto */
+  --texto:#e6f4f4;--suave:#9fc1c8;--tenue:#7d9fab;--aqua:#82cfce;--aqua-claro:#c6eded;--arena:#faefe6;
+  --coral-claro:#efa59f;--ok:#7fd1a3;--borde:#2c4f62;--panel:rgba(8,30,44,.80);--sobre-acento:#000c16;
+  --hud-fondo:rgba(0,12,22,.55);
+  --display:"Big Shoulders Display","Arial Narrow","Roboto Condensed",Impact,sans-serif;
+  --cuerpo:"Inter",-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --hud:clamp(78px,7.5vw,128px);
+  transition:--texto 900ms ease,--suave 900ms ease,--tenue 900ms ease,--aqua 900ms ease,--aqua-claro 900ms ease,
+    --arena 900ms ease,--coral-claro 900ms ease,--ok 900ms ease,--borde 900ms ease,--panel 900ms ease,
+    --sobre-acento 900ms ease,--hud-fondo 900ms ease;
+}
+/* Superficie y −10 m: agua clara, texto oscuro */
+:root[data-z="0"],:root[data-z="8"]{
+  --texto:#001c30;--suave:#1e3a4a;--tenue:#3c5c6f;--aqua:#155f74;--aqua-claro:#155f74;--arena:#00283f;
+  --coral-claro:#a63e57;--ok:#1f7a4f;--borde:rgba(21,95,116,.28);--panel:rgba(255,255,255,.86);--sobre-acento:#ffffff;
+  --hud-fondo:rgba(255,255,255,.55);
+}
+:root[data-z="1"]{
+  --texto:#001c30;--suave:#0f2f40;--tenue:#1e4a5e;--aqua:#0d4f63;--aqua-claro:#0d4f63;--arena:#00283f;
+  --coral-claro:#8f2f47;--ok:#145c3a;--borde:rgba(0,28,48,.25);--panel:rgba(255,255,255,.80);--sobre-acento:#ffffff;
+  --hud-fondo:rgba(255,255,255,.35);
+}
+/* −40 m en adelante: el agua ya es oscura, el texto se aclara */
+:root[data-z="2"]{
+  --texto:#f6fcfc;--suave:#d6edef;--tenue:#acd2d8;--aqua:#c6eded;--aqua-claro:#e3f6f6;--arena:#faefe6;
+  --coral-claro:#ffc2bc;--ok:#a6e8c3;--borde:rgba(198,237,237,.32);--panel:rgba(0,24,40,.66);--sobre-acento:#00283f;
+  --hud-fondo:rgba(0,28,48,.35);
+}
+:root[data-z="3"]{
+  --texto:#eef9f9;--suave:#b9d9de;--tenue:#8fb6bf;--aqua:#9fdcdb;--aqua-claro:#d3f1f1;--arena:#faefe6;
+  --coral-claro:#f6b3ad;--ok:#93ddb4;--borde:rgba(130,207,206,.30);--panel:rgba(0,16,28,.70);--sobre-acento:#001c30;
+  --hud-fondo:rgba(0,18,30,.45);
+}
+html,body{height:100%}
+body{margin:0;background:var(--abismo);color:var(--texto);font-family:var(--cuerpo);overflow:hidden}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+
+/* ---------- el mundo: una columna de agua de 9 pantallas con el iceberg ---------- */
+.mundo{position:fixed;inset:0;overflow:hidden;z-index:0}
+.columna{position:absolute;left:0;right:0;top:0;height:900vh;
+  background:linear-gradient(180deg,
+    #f2fafa 0%, #d8f0f1 5.9%,            /* cielo */
+    #b6e3e5 6.1%, #8ad2d2 11%,            /* superficie, −10 m */
+    #4fb1c2 19%, #24829b 22.5%,           /* −40 m */
+    #135a70 30%, #0c3f56 40%,             /* −120 m */
+    #082d40 52%, #052032 63%,             /* −200 m */
+    #03172a 74%, #020f1c 86%, #00070f 100%);
+  transform:translateY(0);transition:transform 1400ms cubic-bezier(.55,.05,.25,1);will-change:transform}
+.columna svg{position:absolute;top:0;right:3vw;width:44vw;height:100%;overflow:visible;transition:opacity 600ms ease}
+:root[data-corte] .columna svg{opacity:0}
+.columna .agua{position:absolute;left:0;right:0;top:54.6vh;height:1px;background:rgba(21,95,116,.45);
+  box-shadow:0 0 18px 4px rgba(255,255,255,.55)}
+canvas#burbujas{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;opacity:.5;z-index:1}
+
+/* ---------- escenario 16:9, a la derecha del profundímetro ---------- */
+.deck{position:fixed;inset:0;left:var(--hud);display:grid;place-items:center;z-index:2}
+.stage{position:absolute;left:50%;top:50%;width:1600px;height:900px;transform-origin:center center}
+.slide{position:absolute;inset:0;padding:84px 100px 90px 90px;display:flex;flex-direction:column;gap:28px;
+  opacity:0;visibility:hidden;transform:translateY(24px);transition:opacity 450ms ease,transform 450ms ease,visibility 0s 450ms}
+.slide.activa{opacity:1;visibility:visible;transform:none;transition:opacity 450ms ease,transform 450ms ease}
+.slide.antes{transform:translateY(-24px)}
+.slide aside.notas{display:none}
+
+/* ---------- tipografía ---------- */
+.eyebrow{font:600 20px/1 var(--cuerpo);letter-spacing:.18em;text-transform:uppercase;color:var(--aqua);display:flex;gap:14px;align-items:center}
+.eyebrow .fase{font:800 22px/1 var(--display);letter-spacing:.08em;color:var(--sobre-acento);background:var(--aqua);padding:6px 10px 4px;border-radius:4px}
+h1,h2,h3{margin:0;text-wrap:balance}
+h1{font:900 132px/.9 var(--display);letter-spacing:-.01em;text-transform:uppercase}
+h2{font:800 84px/.95 var(--display);text-transform:uppercase;letter-spacing:.005em}
+h3{font:700 34px/1.1 var(--display);text-transform:uppercase;letter-spacing:.03em;color:var(--aqua-claro)}
+p,li{font-size:30px;line-height:1.45;color:var(--suave);margin:0;max-width:62ch}
+.lead{font-size:38px;line-height:1.35;color:var(--texto);max-width:40ch}
+strong{color:var(--texto);font-weight:600}
+em{font-style:normal;color:var(--aqua)}
+.coral{color:var(--coral-claro)}
+.arena{color:var(--arena)}
+code,.mono{font-family:var(--mono)}
+p code,li code,td code{font-size:.82em;background:rgba(130,207,206,.12);color:var(--aqua-claro);padding:2px 8px;border-radius:5px}
+ul.lista{list-style:none;padding:0;margin:0;display:grid;gap:18px}
+ul.lista li{padding-left:40px;position:relative}
+ul.lista li::before{content:"";position:absolute;left:0;top:.62em;width:18px;height:2px;background:var(--aqua)}
+ol.pasos{list-style:none;counter-reset:p;padding:0;margin:0;display:grid;gap:20px}
+ol.pasos li{counter-increment:p;padding-left:62px;position:relative}
+ol.pasos li::before{content:counter(p);position:absolute;left:0;top:-2px;font:800 40px/1 var(--display);color:var(--aqua)}
+
+/* ---------- piezas ---------- */
+.fila{display:flex;gap:40px;align-items:stretch}
+.col{flex:1;min-width:0;display:flex;flex-direction:column;gap:22px}
+.cifras{display:grid;grid-template-columns:repeat(var(--n,3),1fr);gap:28px}
+.cifra{display:flex;flex-direction:column;gap:8px;border-top:2px solid var(--borde);padding-top:20px}
+.cifra b{font:900 120px/.85 var(--display);color:var(--arena);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.cifra b small{font-size:.42em;font-weight:700;color:var(--aqua);margin-left:6px}
+.cifra span{font-size:24px;line-height:1.35;color:var(--suave)}
+.panel{background:var(--panel);backdrop-filter:blur(2px);border:1px solid var(--borde);border-radius:14px;padding:28px 32px;display:flex;flex-direction:column;gap:16px}
+.panel.alerta{border-color:rgba(217,102,126,.55);background:rgba(217,102,126,.08)}
+.panel.ok{border-color:rgba(127,209,163,.45);background:rgba(127,209,163,.07)}
+.panel p,.panel li{font-size:26px}
+.etq{font:600 17px/1 var(--cuerpo);letter-spacing:.14em;text-transform:uppercase;color:var(--tenue)}
+.panel.alerta .etq{color:var(--coral-claro)}
+.panel.ok .etq{color:var(--ok)}
+pre{margin:0;background:rgba(0,12,22,.75);border:1px solid var(--borde);border-radius:12px;padding:24px 28px;overflow:auto;
+  font:400 22px/1.55 var(--mono);color:#cfe7ea;tab-size:4}
+pre .c{color:#6f93a0}pre .k{color:#82cfce}pre .s{color:#efa59f}pre .n{color:#faefe6}pre .f{color:#75d0dd}pre .w{color:#d9667e;font-weight:600}
+.archivo{font:600 18px/1 var(--mono);color:var(--tenue);margin-bottom:-12px}
+table{border-collapse:collapse;width:100%;font-size:25px}
+th{font:600 17px/1.2 var(--cuerpo);letter-spacing:.12em;text-transform:uppercase;color:var(--tenue);text-align:left;padding:0 18px 14px;border-bottom:1px solid var(--borde)}
+td{padding:16px 18px;border-bottom:1px solid rgba(44,79,98,.6);color:var(--suave);vertical-align:top;line-height:1.35}
+td:first-child{color:var(--texto);font-weight:600}
+td.si{color:var(--ok)}td.no{color:var(--coral-claro)}
+.pill{display:inline-block;font:600 16px/1 var(--cuerpo);letter-spacing:.08em;text-transform:uppercase;padding:7px 12px;border-radius:999px;border:1px solid currentColor}
+.pill.alta{color:var(--coral-claro)}.pill.media{color:#f3c98b}.pill.baja{color:var(--aqua)}
+.tachado{text-decoration:line-through;text-decoration-color:var(--coral);text-decoration-thickness:4px;color:var(--tenue)}
+.flecha{font:800 64px/1 var(--display);color:var(--aqua);align-self:center}
+
+/* portada */
+.portada{justify-content:center;gap:34px}
+.portada h1{font-size:150px;max-width:13ch}
+.portada h1 span{color:var(--aqua)}
+.portada .autora{display:flex;gap:22px;align-items:center;font-size:26px;color:var(--suave)}
+.portada .autora b{color:var(--texto);font-weight:600}
+.portada .marca{font:800 26px/1 var(--display);letter-spacing:.2em;color:var(--aqua)}
+
+/* cuenta regresiva */
+.reloj{position:relative;width:340px;height:340px;flex:none}
+.reloj svg{width:100%;height:100%;transform:rotate(-90deg)}
+.reloj circle{fill:none;stroke-width:14}
+.reloj .pista{stroke:var(--borde)}
+.reloj .arco{stroke:var(--aqua);stroke-linecap:round;stroke-dasharray:1037;stroke-dashoffset:0}
+.reloj .num{position:absolute;inset:0;display:grid;place-items:center;font:900 150px/1 var(--display);color:var(--arena);font-variant-numeric:tabular-nums}
+
+/* descenso DIVE */
+.descenso{display:grid;grid-template-columns:repeat(5,1fr);gap:18px;align-items:end;margin-top:6px}
+.capa{border-radius:12px 12px 0 0;padding:22px 22px 26px;display:flex;flex-direction:column;gap:10px;border:1px solid var(--borde);border-bottom:none}
+.capa b{font:900 72px/.9 var(--display);color:var(--aqua)}
+.capa strong{font:700 30px/1 var(--display);text-transform:uppercase;letter-spacing:.04em}
+.capa span{font-size:21px;line-height:1.35;color:var(--suave)}
+.capa .m{font:600 16px/1 var(--mono);color:var(--tenue)}
+
+/* embudo de tareas */
+.embudo{display:flex;flex-direction:column;gap:18px}
+.barra{height:64px;border-radius:8px;display:flex;align-items:center;padding:0 22px;font:700 30px/1 var(--display);letter-spacing:.03em;white-space:nowrap}
+.barra.todo{background:repeating-linear-gradient(90deg,rgba(130,207,206,.18) 0 8px,rgba(130,207,206,.06) 8px 16px);color:var(--suave);width:100%}
+.barra.dive{background:var(--aqua);color:var(--sobre-acento);width:3.04%;min-width:max-content}
+
+
+/* iceberg en corte (slide del método) */
+.corte{position:absolute;left:90px;top:443px;width:1410px;height:420px;overflow:visible}
+.corte .agua-corte{fill:var(--aqua);fill-opacity:.08}
+.corte .linea-agua{stroke:var(--aqua);stroke-width:2}
+.corte .punta-corte{fill:#ffffff;fill-opacity:.9;stroke:var(--aqua);stroke-width:2}
+.corte .cuerpo-corte{fill:var(--aqua);fill-opacity:.14;stroke:var(--aqua);stroke-width:2}
+.corte .guia{stroke:var(--aqua);stroke-opacity:.45;stroke-width:1.5;stroke-dasharray:6 6}
+.corte .nv{font:800 36px var(--display);letter-spacing:.04em;text-transform:uppercase;fill:var(--texto)}
+.corte .ds{font:400 21px var(--cuerpo);fill:var(--suave)}
+.corte .nv.hondo{fill:var(--coral-claro)}
+
+/* profundímetro: fuera del escenario, con tamaño propio para que se lea en cualquier pantalla */
+.hud{position:fixed;left:0;top:0;bottom:0;width:var(--hud);z-index:4;background:var(--hud-fondo);
+  border-right:1px solid var(--borde);backdrop-filter:blur(6px);padding:calc(18px + env(safe-area-inset-top,0px)) 0 calc(18px + env(safe-area-inset-bottom,0px))}
+.hud .tubo{position:relative;height:100%}
+.hud svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.hud .ice{fill:var(--aqua);fill-opacity:.10;stroke:var(--aqua);stroke-opacity:.55;stroke-width:1.2;vector-effect:non-scaling-stroke}
+.hud .punta{fill:var(--texto);fill-opacity:.18;stroke:var(--texto);stroke-opacity:.6;stroke-width:1.2;vector-effect:non-scaling-stroke}
+.hud .nivel{stroke:var(--texto);stroke-opacity:.55;stroke-width:1;vector-effect:non-scaling-stroke;stroke-dasharray:3 3}
+.hud .ventana{position:absolute;left:4px;right:4px;border:2px solid var(--arena);border-radius:6px;
+  box-shadow:0 0 0 3px rgba(255,255,255,.08),0 0 22px rgba(130,207,206,.35);transition:top 1400ms cubic-bezier(.55,.05,.25,1)}
+.hud .etqs{position:absolute;inset:0}
+.hud .z{position:absolute;left:50%;transform:translate(-50%,-50%);font:700 clamp(13px,1.2vw,19px)/1.05 var(--display);
+  letter-spacing:.08em;text-transform:uppercase;color:var(--texto);text-align:center;white-space:nowrap;
+  padding:3px 6px;border-radius:4px;opacity:.9;transition:opacity 400ms}
+.hud .z small{display:block;font:600 clamp(11px,.92vw,14px)/1.1 var(--mono);letter-spacing:0;opacity:.85;text-transform:none}
+.hud .z.aqui{opacity:1;background:var(--aqua);color:var(--sobre-acento)}
+
+/* pie */
+.pie{position:absolute;left:90px;right:100px;bottom:34px;display:flex;justify-content:space-between;align-items:center;font:500 17px/1 var(--cuerpo);color:var(--tenue);letter-spacing:.06em}
+.pie .marca-pie{font:800 18px/1 var(--display);letter-spacing:.22em;color:var(--aqua)}
+.pie .num{font-variant-numeric:tabular-nums}
+
+/* barra de progreso + controles (fuera del escenario) */
+.progreso{position:fixed;left:0;right:0;top:0;height:4px;background:rgba(44,79,98,.35);z-index:5}
+.progreso i{display:block;height:100%;background:var(--aqua);width:0;transition:width 400ms ease}
+.controles{position:fixed;right:16px;bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;gap:8px;z-index:6}
+.controles button{font:600 14px/1 var(--cuerpo);color:#9fc1c8;background:rgba(11,42,61,.85);border:1px solid #2c4f62;border-radius:8px;padding:10px 12px;cursor:pointer;min-width:44px;min-height:44px}
+.controles button:hover{color:#e6f4f4;border-color:#82cfce}
+button:focus-visible,a:focus-visible{outline:3px solid #82cfce;outline-offset:2px}
+
+/* vista presentadora */
+.presentadora{position:fixed;left:calc(var(--hud) + 16px);bottom:calc(14px + env(safe-area-inset-bottom,0px));width:min(560px,calc(100vw - var(--hud) - 32px));max-height:46vh;overflow:auto;z-index:7;
+  background:rgba(0,12,22,.94);border:1px solid #2c4f62;border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:10px}
+.presentadora .cab{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font:600 13px/1 var(--cuerpo);letter-spacing:.1em;text-transform:uppercase;color:#7d9fab}
+.presentadora .crono{font:800 34px/1 var(--display);color:#faefe6;font-variant-numeric:tabular-nums;letter-spacing:.04em}
+.presentadora .txt{font-size:16px;line-height:1.55;color:#e6f4f4}
+.presentadora .txt p{font-size:16px;color:#e6f4f4;margin:0 0 8px}
+.presentadora .sig{font-size:13px;color:#7d9fab}
+
+/* índice */
+.indice{position:fixed;inset:0;z-index:8;background:rgba(0,12,22,.96);padding:48px 16px;overflow:auto}
+.indice .rejilla{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.indice h4{max-width:1100px;margin:0 auto 20px;font:800 34px/1 var(--display);letter-spacing:.06em;text-transform:uppercase;color:#82cfce}
+.indice button{text-align:left;background:var(--mar-2);border:1px solid #2c4f62;border-radius:10px;padding:14px 16px;color:#e6f4f4;font:500 15px/1.35 var(--cuerpo);cursor:pointer;display:flex;gap:12px}
+.indice button span{font:700 18px/1 var(--display);color:#82cfce;min-width:28px}
+.indice button:hover,.indice button.aqui{border-color:#82cfce}
+.ayuda{font:500 13px/1.6 var(--cuerpo);color:#7d9fab;max-width:1100px;margin:22px auto 0}
+.ayuda kbd{font-family:var(--mono);background:var(--superficie);border-radius:4px;padding:1px 6px;color:#e6f4f4}
+
+/* ---------- versión visual: letra más grande en todo el escenario ---------- */
+p,li{font-size:34px}
+.lead{font-size:46px;line-height:1.3}
+h2{font-size:92px}
+.eyebrow{font-size:24px}
+.eyebrow .fase{font-size:26px}
+.etq{font-size:22px}
+.cifra b{font-size:160px}
+.cifra span{font-size:34px;color:var(--texto)}
+pre{font-size:26px}
+pre.grande{font-size:30px;line-height:1.5}
+.pie{font-size:20px}
+.archivo{font-size:22px}
+
+/* ---------- gráficos SVG: todo sale de los tokens de la zona ---------- */
+.v{display:block;width:100%;height:auto;overflow:visible}
+.v .tx{fill:var(--texto);font:600 30px var(--cuerpo)}
+.v .tx-s{fill:var(--suave);font:500 27px var(--cuerpo)}
+.v .tx-c{fill:var(--coral-claro);font:700 30px var(--cuerpo)}
+.v .tx-ok{fill:var(--ok);font:700 30px var(--cuerpo)}
+.v .mini{fill:var(--suave);font:500 23px var(--cuerpo)}
+.v .ttl{fill:var(--texto);font:800 36px var(--display);letter-spacing:.03em;text-transform:uppercase}
+.v .ttl-c{fill:var(--coral-claro);font:800 36px var(--display);letter-spacing:.03em;text-transform:uppercase}
+.v .num{fill:var(--arena);font:900 120px var(--display)}
+.v .num-m{fill:var(--arena);font:900 76px var(--display)}
+.v .num-s{fill:var(--arena);font:900 46px var(--display)}
+.v .num-sev{fill:#001c30;font:900 84px var(--display)}
+.v .json{fill:var(--aqua-claro);font:600 25px var(--mono)}
+.v .veredicto{fill:var(--coral-claro);font:700 30px var(--cuerpo)}
+.v .caja{fill:var(--panel);stroke:var(--borde);stroke-width:2}
+.v .caja-a{fill:var(--panel);stroke:var(--aqua);stroke-width:4}
+.v .caja-c{fill:var(--panel);stroke:var(--coral-claro);stroke-width:4}
+.v .caja-ok{fill:var(--panel);stroke:var(--ok);stroke-width:4}
+.v .nodo{fill:var(--panel);stroke:var(--texto);stroke-opacity:.55;stroke-width:2}
+.v .nodo-a{fill:var(--panel);stroke:var(--aqua);stroke-width:4}
+.v .nodo-c{fill:var(--panel);stroke:var(--coral-claro);stroke-width:4}
+.v .sub-pub{fill:var(--aqua);fill-opacity:.12;stroke:var(--aqua);stroke-width:2;stroke-dasharray:10 7}
+.v .sub-priv{fill:var(--texto);fill-opacity:.06;stroke:var(--texto);stroke-opacity:.45;stroke-width:2;stroke-dasharray:10 7}
+.v .lin{fill:none;stroke:var(--texto);stroke-opacity:.6;stroke-width:3}
+.v .lin-a{fill:none;stroke:var(--aqua);stroke-width:5;stroke-linejoin:round}
+.v .area{fill:var(--aqua);fill-opacity:.2}
+.v .eje{stroke:var(--texto);stroke-opacity:.5;stroke-width:2}
+.v .eje-g{stroke:var(--texto);stroke-opacity:.6;stroke-width:4}
+.v .rel-a{fill:var(--aqua)}.v .rel-c{fill:var(--coral-claro)}.v .rel-t{fill:var(--texto)}.v .rel-ar{fill:var(--arena)}
+.v .lleno-a{fill:var(--aqua)}.v .lleno-c{fill:var(--coral-claro)}
+.v .apagado{fill:none;stroke:var(--texto);stroke-opacity:.4;stroke-width:3;stroke-dasharray:6 6}
+.v .encendido{fill:var(--coral-claro)}
+/* severidad: tres tonos de familias distintas (rojo, ámbar, aqua) y siempre con su etiqueta */
+.v .sev-alta{fill:#e07a8f}.v .sev-media{fill:#f3c98b}.v .sev-baja{fill:#9fdcdb}
+.v .dona-pista{fill:none;stroke:var(--borde);stroke-width:36}
+.v .dona{fill:none;stroke:var(--arena);stroke-width:36;stroke-linecap:round}
+.v .ic-g{fill:var(--panel);stroke:var(--texto);stroke-width:3}
+.v .zona-ok{fill:var(--ok);fill-opacity:.16;stroke:var(--ok);stroke-width:2}
+.v .marca-no{fill:var(--coral-claro)}.v .marca-ok{fill:var(--ok)}
+.v .separador{stroke:var(--borde);stroke-width:2;stroke-dasharray:6 8}
+.v .capa-1{fill:var(--panel);stroke:var(--borde);stroke-width:2}
+.v .capa-2{fill:var(--aqua);fill-opacity:.10;stroke:var(--borde);stroke-width:2}
+.v .capa-3{fill:var(--aqua);fill-opacity:.16;stroke:var(--aqua);stroke-width:2}
+.v .capa-4{fill:var(--ok);fill-opacity:.25;stroke:var(--ok);stroke-width:3}
+.v .seg-a{fill:var(--aqua)}.v .seg-b{fill:var(--arena)}
+.v .seg-t{fill:#001c30;font:900 48px var(--display)}
+
+/* ---------- piezas HTML ---------- */
+.leyenda{display:flex;flex-wrap:wrap;gap:40px;font-size:27px;color:var(--texto)}
+.punto{display:inline-block;width:20px;height:20px;border-radius:50%;margin-right:12px;vertical-align:-2px}
+.punto.a{background:var(--aqua)}.punto.c{background:var(--coral-claro)}
+.iconos{display:grid;grid-template-columns:repeat(var(--n,5),1fr);gap:26px;margin-top:16px}
+.icono{display:flex;flex-direction:column;gap:24px;background:var(--panel);border:2px solid var(--borde);border-radius:18px;padding:36px 28px}
+.icono svg{width:100px;height:100px}
+.icono b{font:800 42px/1.05 var(--display);text-transform:uppercase;letter-spacing:.02em;color:var(--texto)}
+.ic{fill:none;stroke:var(--aqua);stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
+.ic-c{fill:none;stroke:var(--coral-claro);stroke-width:6;stroke-linecap:round}
+.antes-despues{display:flex;flex-direction:column;gap:12px}
+.ad{display:flex;flex-direction:column;gap:10px;background:var(--panel);border:2px solid var(--borde);border-radius:14px;padding:22px 28px}
+.ad code{font:500 36px/1.3 var(--mono);color:var(--texto);overflow-wrap:anywhere}
+.ad code b{font-weight:700;color:var(--aqua-claro)}
+.ad code b.coral{color:var(--coral-claro)}
+.antes-despues .flecha{font-size:52px;align-self:flex-start;margin-left:28px}
+.tarjetas{display:grid;grid-template-columns:repeat(4,1fr);gap:22px}
+.tarjeta{background:var(--panel);border:2px solid var(--borde);border-radius:16px;padding:26px 26px 30px;display:flex;flex-direction:column;gap:14px;min-height:210px}
+.tarjeta b{font:900 76px/1 var(--display);color:var(--aqua)}
+.tarjeta span{font:800 38px/1.05 var(--display);text-transform:uppercase;color:var(--texto)}
+.tarjeta.alerta{border:3px solid var(--coral-claro)}
+.tarjeta.alerta b{color:var(--coral-claro)}
+.pasos-h{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-top:24px}
+.pasos-h.cinco{grid-template-columns:repeat(5,1fr)}
+.paso{background:var(--panel);border:2px solid var(--borde);border-radius:16px;padding:32px 26px;display:flex;flex-direction:column;gap:18px}
+.paso b{font:900 88px/1 var(--display);color:var(--aqua)}
+.paso strong{font:800 44px/1 var(--display);text-transform:uppercase}
+.paso code{font:500 25px/1.3 var(--mono);color:var(--suave);overflow-wrap:anywhere}
+.paso.tuyo{border:3px solid var(--coral-claro)}
+.paso.tuyo b{color:var(--coral-claro)}
+.chips{display:flex;flex-wrap:wrap;gap:20px;margin-top:10px}
+.chip{font:600 34px/1 var(--cuerpo);color:var(--texto);background:var(--panel);border:2px solid var(--coral-claro);border-radius:999px;padding:20px 30px;
+  text-decoration:line-through;text-decoration-color:var(--coral-claro);text-decoration-thickness:3px}
+.chips.pequenos{margin:0}
+.chips.pequenos .chip{font-size:26px;padding:12px 20px;text-decoration:none;border-color:var(--borde)}
+.chips.pequenos .chip.ok{border-color:var(--ok)}
+.codigos{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.codigos .col{gap:18px}
+.codigos pre{font-size:26px;flex:1}
+
+@media (prefers-reduced-motion:reduce){
+  :root,.slide,.slide.activa,.columna,.hud .ventana,.progreso i{transition:none}
+  canvas#burbujas{display:none}
+}
+</style>
+
+<div class="progreso" aria-hidden="true"><i id="barra"></i></div>
+
+<div class="mundo" aria-hidden="true">
+  <div class="columna" id="columna">
+    <svg viewBox="0 0 400 900" preserveAspectRatio="none">
+      <polygon points="200,20 222,30 238,42 252,54.6 146,54.6 160,44 178,31" fill="rgba(255,255,255,.88)" stroke="rgba(21,95,116,.55)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+      <polygon points="146,54.6 252,54.6 292,95 324,170 352,265 374,380 382,490 370,600 344,700 300,785 236,846 176,860 116,832 66,762 32,654 16,524 22,398 42,284 74,186 108,106" fill="rgba(198,237,237,.10)" stroke="rgba(198,237,237,.30)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+      <polyline points="146,54.6 190,140 170,260 220,420 190,600 236,846" fill="none" stroke="rgba(198,237,237,.12)" stroke-width="1" vector-effect="non-scaling-stroke"/>
+      <polyline points="252,54.6 270,200 320,360 300,560 300,785" fill="none" stroke="rgba(198,237,237,.10)" stroke-width="1" vector-effect="non-scaling-stroke"/>
+    </svg>
+    <div class="agua"></div>
+  </div>
+</div>
+
+<aside class="hud" aria-hidden="true">
+  <div class="tubo">
+    <svg viewBox="0 0 400 900" preserveAspectRatio="none">
+      <line class="nivel" x1="0" y1="54.6" x2="400" y2="54.6"/>
+      <polygon class="punta" points="200,20 222,30 238,42 252,54.6 146,54.6 160,44 178,31"/>
+      <polygon class="ice" points="146,54.6 252,54.6 292,95 324,170 352,265 374,380 382,490 370,600 344,700 300,785 236,846 176,860 116,832 66,762 32,654 16,524 22,398 42,284 74,186 108,106"/>
+    </svg>
+    <div class="ventana" id="ventana"></div>
+    <div class="etqs" id="etqs"></div>
+  </div>
+</aside>
+
+<main class="deck" id="deck">
+<canvas id="burbujas" aria-hidden="true"></canvas>
+<div class="stage" id="stage">
+
+<!-- ================= SUPERFICIE ================= -->
+<section class="slide portada" data-zona="0" data-titulo="Portada">
+  <div class="marca">🌊 DIVELEARN · AWS COMMUNITY DAY</div>
+  <h1>16 cuentas, 12 regiones, <span>1 tarde</span></h1>
+  <p class="lead">Inventario de una AWS Organization con IA. Sin permisos de escritura, ni para la IA.</p>
+  <div class="autora"><b>Mar Ortiz</b><span>AWS Infrastructure · DiveLearn</span></div>
+  <aside class="notas"><p>Bienvenida. Presentarme en una frase: llevo la infraestructura AWS de una organización con muchas cuentas.</p><p>Hoy: una historia real, un método que se llevan y el código para correrlo el lunes.</p></aside>
+</section>
+
+<section class="slide" data-zona="0" data-titulo="¿Cuántos recursos tienes?">
+  <div class="fila" style="align-items:center;gap:80px;flex:1">
+    <div class="col" style="flex:1.4">
+      <h2 style="font-size:96px">¿Cuántos recursos tienes corriendo en AWS ahora mismo?</h2>
+    </div>
+    <div class="reloj" aria-label="Cuenta regresiva de 10 segundos">
+      <svg viewBox="0 0 360 360"><circle class="pista" cx="180" cy="180" r="165"/><circle class="arco" id="arco" cx="180" cy="180" r="165"/></svg>
+      <div class="num" id="segundos">10</div>
+    </div>
+  </div>
+  <aside class="notas"><p>La cuenta regresiva arranca sola. Dejar que corra en silencio.</p><p>"Si tardas más de diez segundos en responder, esta charla es para ti." Pedir manos: ¿quién lo sabe? ¿en cuántas regiones?</p></aside>
+</section>
+
+<section class="slide" data-zona="0" data-titulo="El océano heredado">
+  <div class="eyebrow">El caso real · una fintech de pagos</div>
+  <h2>23 cuentas. Nadie las conocía todas.</h2>
+  <svg class="v" viewBox="0 0 1410 412" role="img" aria-label="23 cuentas: recursos y regiones con cargos de cada una">
+<rect class="caja-c" x="0" y="0" width="104" height="196" rx="10"/>
+<text class="num-s" x="14" y="52">399</text>
+<text class="mini" x="14" y="80">recursos</text>
+<circle class="rel-c" cx="18" cy="108" r="6"/>
+<circle class="rel-c" cx="35" cy="108" r="6"/>
+<circle class="rel-c" cx="52" cy="108" r="6"/>
+<circle class="rel-c" cx="69" cy="108" r="6"/>
+<circle class="rel-c" cx="86" cy="108" r="6"/>
+<circle class="rel-c" cx="18" cy="125" r="6"/>
+<circle class="rel-c" cx="35" cy="125" r="6"/>
+<circle class="rel-c" cx="52" cy="125" r="6"/>
+<circle class="rel-c" cx="69" cy="125" r="6"/>
+<circle class="rel-c" cx="86" cy="125" r="6"/>
+<circle class="rel-c" cx="18" cy="142" r="6"/>
+<circle class="rel-c" cx="35" cy="142" r="6"/>
+<circle class="rel-c" cx="52" cy="142" r="6"/>
+<circle class="rel-c" cx="69" cy="142" r="6"/>
+<circle class="rel-c" cx="86" cy="142" r="6"/>
+<circle class="rel-c" cx="18" cy="159" r="6"/>
+<circle class="rel-c" cx="35" cy="159" r="6"/>
+<rect class="caja" x="116" y="0" width="104" height="196" rx="10"/>
+<text class="num-s" x="130" y="52">344</text>
+<text class="mini" x="130" y="80">recursos</text>
+<circle class="rel-a" cx="134" cy="108" r="6"/>
+<rect class="caja" x="232" y="0" width="104" height="196" rx="10"/>
+<text class="num-s" x="246" y="52">213</text>
+<text class="mini" x="246" y="80">recursos</text>
+<circle class="rel-a" cx="250" cy="108" r="6"/>
+<circle class="rel-a" cx="267" cy="108" r="6"/>
+<rect class="caja" x="348" y="0" width="104" height="196" rx="10"/>
+<text class="num-s" x="362" y="52">175</text>
+<text class="mini" x="362" y="80">recursos</text>
+<circle class="rel-a" cx="366" cy="108" r="6"/>
+<rect class="caja" x="464" y="0" width="104" height="196" rx="10"/>
+<text class="num-s" x="478" y="52">152</text>
+<text class="mini" x="478" y="80">recursos</text>
+<circle class="rel-a" cx="482" cy="108" r="6"/>
+<circle class="rel-a" cx="499" cy="108" r="6"/>
+<rect class="caja" x="580" y="0" width="104" height="196" rx="10"/>
+<text class="num-s" x="594" y="52">150</text>
+<text class="mini" x="594" y="80">recursos</text>
+<circle class="rel-a" cx="598" cy="108" r="6"/>
+<circle class="rel-a" cx="615" cy="108" r="6"/>
+<rect class="caja" x="696" y="0" width="104" height="196" rx="10"/>
+<text class="num-s" x="710" y="52">132</text>
+<text class="mini" x="710" y="80">recursos</text>
+<circle class="rel-a" cx="714" cy="108" r="6"/>
+<rect class="caja" x="812" y="0" width="104" height="196" rx="10"/>
+<text class="num-s" x="826" y="52">128</text>
+<text class="mini" x="826" y="80">recursos</text>
+<circle class="rel-a" cx="830" cy="108" r="6"/>
+<circle class="rel-a" cx="847" cy="108" r="6"/>
+<circle class="rel-a" cx="864" cy="108" r="6"/>
+<rect class="caja" x="928" y="0" width="104" height="196" rx="10"/>
+<text class="num-s" x="942" y="52">101</text>
+<text class="mini" x="942" y="80">recursos</text>
+<circle class="rel-a" cx="946" cy="108" r="6"/>
+<circle class="rel-a" cx="963" cy="108" r="6"/>
+<rect class="caja" x="1044" y="0" width="104" height="196" rx="10"/>
+<text class="num-s" x="1058" y="52">97</text>
+<text class="mini" x="1058" y="80">recursos</text>
+<circle class="rel-a" cx="1062" cy="108" r="6"/>
+<rect class="caja" x="1160" y="0" width="104" height="196" rx="10"/>
+<text class="num-s" x="1174" y="52">87</text>
+<text class="mini" x="1174" y="80">recursos</text>
+<circle class="rel-a" cx="1178" cy="108" r="6"/>
+<circle class="rel-a" cx="1195" cy="108" r="6"/>
+<rect class="caja" x="1276" y="0" width="104" height="196" rx="10"/>
+<text class="num-s" x="1290" y="52">84</text>
+<text class="mini" x="1290" y="80">recursos</text>
+<circle class="rel-a" cx="1294" cy="108" r="6"/>
+<circle class="rel-a" cx="1311" cy="108" r="6"/>
+<circle class="rel-a" cx="1328" cy="108" r="6"/>
+<rect class="caja" x="58.0" y="216" width="104" height="196" rx="10"/>
+<text class="num-s" x="72.0" y="268">81</text>
+<text class="mini" x="72.0" y="296">recursos</text>
+<circle class="rel-a" cx="76.0" cy="324" r="6"/>
+<rect class="caja" x="174.0" y="216" width="104" height="196" rx="10"/>
+<text class="num-s" x="188.0" y="268">57</text>
+<text class="mini" x="188.0" y="296">recursos</text>
+<circle class="rel-a" cx="192.0" cy="324" r="6"/>
+<rect class="caja" x="290.0" y="216" width="104" height="196" rx="10"/>
+<text class="num-s" x="304.0" y="268">36</text>
+<text class="mini" x="304.0" y="296">recursos</text>
+<circle class="rel-a" cx="308.0" cy="324" r="6"/>
+<rect class="caja" x="406.0" y="216" width="104" height="196" rx="10"/>
+<text class="num-s" x="420.0" y="268">35</text>
+<text class="mini" x="420.0" y="296">recursos</text>
+<circle class="rel-a" cx="424.0" cy="324" r="6"/>
+<rect class="caja" x="522.0" y="216" width="104" height="196" rx="10"/>
+<text class="num-s" x="536.0" y="268">34</text>
+<text class="mini" x="536.0" y="296">recursos</text>
+<circle class="rel-a" cx="540.0" cy="324" r="6"/>
+<rect class="caja" x="638.0" y="216" width="104" height="196" rx="10"/>
+<text class="num-s" x="652.0" y="268">32</text>
+<text class="mini" x="652.0" y="296">recursos</text>
+<circle class="rel-a" cx="656.0" cy="324" r="6"/>
+<rect class="caja" x="754.0" y="216" width="104" height="196" rx="10"/>
+<text class="num-s" x="768.0" y="268">26</text>
+<text class="mini" x="768.0" y="296">recursos</text>
+<circle class="rel-a" cx="772.0" cy="324" r="6"/>
+<circle class="rel-a" cx="789.0" cy="324" r="6"/>
+<rect class="caja" x="870.0" y="216" width="104" height="196" rx="10"/>
+<text class="num-s" x="884.0" y="268">26</text>
+<text class="mini" x="884.0" y="296">recursos</text>
+<circle class="rel-a" cx="888.0" cy="324" r="6"/>
+<rect class="caja" x="986.0" y="216" width="104" height="196" rx="10"/>
+<text class="num-s" x="1000.0" y="268">22</text>
+<text class="mini" x="1000.0" y="296">recursos</text>
+<circle class="rel-a" cx="1004.0" cy="324" r="6"/>
+<rect class="caja" x="1102.0" y="216" width="104" height="196" rx="10"/>
+<text class="num-s" x="1116.0" y="268">16</text>
+<text class="mini" x="1116.0" y="296">recursos</text>
+<circle class="rel-a" cx="1120.0" cy="324" r="6"/>
+<rect class="caja" x="1218.0" y="216" width="104" height="196" rx="10"/>
+<text class="num-s" x="1232.0" y="268">0</text>
+<text class="mini" x="1232.0" y="296">recursos</text>
+  </svg>
+  <div class="leyenda"><span><i class="punto a"></i>región con cargos</span><span><i class="punto c"></i>una cuenta con cargos en 17 regiones</span></div>
+  <aside class="notas"><p>Cada tarjeta es una cuenta real, anonimizada. El número son sus recursos; cada punto, una región con cargos en 6 meses.</p><p>La organización creció orgánicamente: cada equipo abre su cuenta, alguien prueba algo en otra región. El contexto vive en la cabeza de alguien que quizás ya no está.</p><p>El título dice 16 y 12 porque así empezó; cuando terminamos de mirar eran 23 cuentas y 17 regiones.</p></aside>
+</section>
+
+<section class="slide" data-zona="0" data-titulo="La primera vez">
+  <div class="eyebrow">La primera vez, a mano</div>
+  <h2>Semanas</h2>
+  <div class="cifras" style="--n:3">
+    <div class="cifra"><b>23</b><span>PDFs de facturación</span></div>
+    <div class="cifra"><b>1.543</b><span>líneas de bash</span></div>
+    <div class="cifra"><b>v7</b><span>del generador de diagramas</span></div>
+  </div>
+  <aside class="notas"><p>Lo hice así la primera vez: facturas descargadas cuenta por cuenta, un bash corrido cuenta × región, y un generador de diagramas que parseaba la salida en tabla del CLI. Cada cambio de formato lo rompía: por eso llegó a la versión 7.</p><p>Funcionó, pero no se podía repetir. Y un inventario que no se repite caduca el mes siguiente.</p></aside>
+</section>
+
+<section class="slide" data-zona="0" data-corte="1" data-titulo="Método DIVE · el iceberg">
+  <div class="eyebrow">El método</div>
+  <h2>La factura es la punta</h2>
+  <svg class="corte" viewBox="0 0 1400 520" preserveAspectRatio="xMinYMin meet" role="img" aria-label="Iceberg en corte con las fases del método a distintas profundidades">
+    <rect class="agua-corte" x="0" y="60" width="1400" height="460"/>
+    <line class="linea-agua" x1="0" y1="60" x2="1400" y2="60"/>
+    <polygon class="punta-corte" points="1010,-150 1048,-96 1072,-30 1092,60 928,60 946,-10 972,-90"/>
+    <polygon class="cuerpo-corte" points="928,60 1092,60 1150,110 1200,190 1232,280 1236,370 1206,440 1140,494 1040,516 940,500 860,450 806,380 786,290 800,200 846,120"/>
+    <line class="guia" x1="560" y1="60" x2="930" y2="60"/><text class="nv" x="0" y="74">Superficie · la factura</text>
+    <line class="guia" x1="560" y1="130" x2="836" y2="130"/><text class="nv" x="0" y="144">0 · Preparar</text>
+    <line class="guia" x1="560" y1="200" x2="800" y2="200"/><text class="nv" x="0" y="214">D · Descubrir</text>
+    <line class="guia" x1="560" y1="270" x2="789" y2="270"/><text class="nv" x="0" y="284">I · Inventariar</text>
+    <line class="guia" x1="560" y1="340" x2="790" y2="340"/><text class="nv" x="0" y="354">V · Validar</text>
+    <line class="guia" x1="560" y1="410" x2="818" y2="410"/><text class="nv" x="0" y="424">E · Esquematizar</text>
+    <line class="guia" x1="560" y1="480" x2="880" y2="480"/><text class="nv hondo" x="0" y="494">Lo que nadie ve</text>
+  </svg>
+  <aside class="notas"><p>La factura es lo único que todos ven. Debajo están los recursos que nadie recuerda, lo que está en free tier y no factura, y los riesgos.</p><p>Cada fase baja un nivel: Preparar un rol de lectura, Descubrir con la factura, Inventariar solo ahí, Validar, Esquematizar. Cada fase lee un JSON y escribe otro.</p></aside>
+</section>
+
+<section class="slide" data-zona="0" data-titulo="Las reglas del método">
+  <div class="eyebrow">Lo que lo hace un método</div>
+  <h2>Cinco reglas</h2>
+  <div class="iconos">
+    <div class="icono"><svg viewBox="0 0 80 80"><rect class="ic" x="14" y="8" width="52" height="64" rx="6"/><line class="ic" x1="26" y1="26" x2="54" y2="26"/><line class="ic" x1="26" y1="40" x2="54" y2="40"/><line class="ic" x1="26" y1="54" x2="44" y2="54"/></svg><b>La factura es el mapa</b></div>
+    <div class="icono"><svg viewBox="0 0 80 80"><path class="ic" d="M28 12 C16 12 20 34 10 40 C20 46 16 68 28 68"/><path class="ic" d="M52 12 C64 12 60 34 70 40 C60 46 64 68 52 68"/></svg><b>JSON entre fases</b></div>
+    <div class="icono"><svg viewBox="0 0 80 80"><circle class="ic" cx="40" cy="40" r="28"/><line class="ic-c" x1="20" y1="20" x2="60" y2="60"/></svg><b>La IA no inventa datos</b></div>
+    <div class="icono"><svg viewBox="0 0 80 80"><path class="ic" d="M6 40 C20 18 60 18 74 40 C60 62 20 62 6 40 Z"/><circle class="ic" cx="40" cy="40" r="10"/></svg><b>Solo lectura</b></div>
+    <div class="icono"><svg viewBox="0 0 80 80"><circle class="ic" cx="40" cy="26" r="14"/><path class="ic" d="M14 72 C14 52 66 52 66 72"/></svg><b>Revisión humana</b></div>
+  </div>
+  <aside class="notas"><p>1) Solo se escanea donde hubo uso facturado. 2) Cada fase produce un archivo que es la entrada de la siguiente. 3) Todo lo que hay en los JSON vino de AWS. 4) Aunque seas admin, se escanea con un rol de lectura. 5) Se revisa cada entregable antes de seguir.</p><p>El código cambia; las reglas no.</p></aside>
+</section>
+
+<!-- ================= D ================= -->
+<section class="slide" data-zona="1" data-titulo="D · La factura no miente">
+  <div class="eyebrow"><span class="fase">D</span>Descubrir</div>
+  <h2>Escanear todo vs. leer la factura</h2>
+  <svg class="v" viewBox="0 0 1410 470" role="img" aria-label="14.858 combinaciones posibles frente a 451 tareas">
+    <rect class="caja" x="0" y="0" width="1000" height="420" rx="12"/>
+    <text class="num" x="40" y="110">14.858</text>
+    <text class="tx" x="40" y="160">combinaciones posibles</text>
+    <text class="tx-s" x="40" y="200">23 cuentas × 17 regiones × 38 colectores</text>
+    <rect class="lleno-a" x="1040" y="290" width="130" height="130" rx="10"/>
+    <text class="num" x="1040" y="250">451</text>
+    <text class="tx" x="1190" y="350">tareas</text>
+    <text class="tx-s" x="1190" y="390">el 3 %</text>
+  </svg>
+  <aside class="notas"><p>La idea central: la factura no miente. Todo lo que corre y cuesta aparece ahí, con cuenta, región y servicio, aunque nadie se acuerde de haberlo creado.</p><p>En vez de preguntarle a cada API de cada región si tiene algo, le preguntamos a la factura. Menos llamadas, menos throttling, ninguna llamada de más a producción.</p><p>6 meses y no 1: atrapa lo intermitente y lo que se prendió hace poco.</p></aside>
+</section>
+
+<section class="slide" data-zona="1" data-titulo="D · En cifras">
+  <div class="eyebrow"><span class="fase">D</span>Descubrir · resultado</div>
+  <h2>Seis meses de factura</h2>
+  <div class="cifras" style="--n:3">
+    <div class="cifra"><b>10<small>s</small></b><span>en total</span></div>
+    <div class="cifra"><b>19</b><span>llamadas a Cost Explorer</span></div>
+    <div class="cifra"><b>0,19<small>USD</small></b><span>de costo</span></div>
+  </div>
+  <aside class="notas"><p>Dos preguntas a Cost Explorer: qué regiones tienen uso (1 llamada) y qué servicios en cada región (1 por región). Las cuentas no suman llamadas.</p><p>Solo se cuentan registros de uso: las cuotas de reservas no son recursos. El código lo vemos al final.</p></aside>
+</section>
+
+<section class="slide" data-zona="1" data-titulo="D · Dónde corregí a la IA (1)">
+  <div class="eyebrow"><span class="fase">D</span>Dónde corregí a la IA</div>
+  <h2>Regiones sorpresa: 23 → 9</h2>
+  <svg class="v" viewBox="0 0 1410 300" role="img" aria-label="23 regiones sorpresa, de las cuales 14 eran ruido de CloudTrail">
+    <g>
+      <circle class="apagado" cx="40" cy="60" r="26"/><circle class="apagado" cx="110" cy="60" r="26"/><circle class="apagado" cx="180" cy="60" r="26"/><circle class="apagado" cx="250" cy="60" r="26"/><circle class="apagado" cx="320" cy="60" r="26"/><circle class="apagado" cx="390" cy="60" r="26"/><circle class="apagado" cx="460" cy="60" r="26"/>
+      <circle class="apagado" cx="40" cy="130" r="26"/><circle class="apagado" cx="110" cy="130" r="26"/><circle class="apagado" cx="180" cy="130" r="26"/><circle class="apagado" cx="250" cy="130" r="26"/><circle class="apagado" cx="320" cy="130" r="26"/><circle class="apagado" cx="390" cy="130" r="26"/><circle class="apagado" cx="460" cy="130" r="26"/>
+    </g>
+    <text class="tx" x="10" y="220">14 eran CloudTrail</text>
+    <text class="tx-s" x="10" y="258">USD 0,02 por región</text>
+    <g>
+      <circle class="encendido" cx="760" cy="60" r="26"/><circle class="encendido" cx="830" cy="60" r="26"/><circle class="encendido" cx="900" cy="60" r="26"/><circle class="encendido" cx="970" cy="60" r="26"/><circle class="encendido" cx="1040" cy="60" r="26"/>
+      <circle class="encendido" cx="760" cy="130" r="26"/><circle class="encendido" cx="830" cy="130" r="26"/><circle class="encendido" cx="900" cy="130" r="26"/><circle class="encendido" cx="970" cy="130" r="26"/>
+    </g>
+    <text class="tx" x="730" y="220">9 con recursos reales</text>
+    <text class="tx-s" x="730" y="258">una VPC olvidada, un RDS en otra región</text>
+  </svg>
+  <aside class="notas"><p>La IA escribió el detector en minutos. Lo que no sabía es que CloudTrail, Config o GuardDuty cobran en todas las regiones. Ese filtro lo puso el criterio humano.</p><p>Otra trampa: la cuenta management "cobraba RDS sin tener RDS": USD 1.247/mes de cuota de reservas.</p></aside>
+</section>
+
+<!-- ================= I ================= -->
+<section class="slide" data-zona="2" data-titulo="I · Escanear solo ahí">
+  <div class="eyebrow"><span class="fase">I</span>Inventariar</div>
+  <h2>Un login, 22 cuentas, 2 minutos</h2>
+  <svg class="v" viewBox="0 0 1410 440" role="img" aria-label="Flujo: login SSO, perfiles de solo lectura por cuenta, hilos en paralelo, inventory.json">
+    <rect class="caja-a" x="0" y="150" width="230" height="140" rx="14"/>
+    <text class="ttl" x="115" y="212" text-anchor="middle">SSO</text><text class="tx-s" x="115" y="252" text-anchor="middle">un login</text>
+    <path class="lin" d="M230 220 C290 220 290 60 350 60"/><path class="lin" d="M230 220 L350 220"/><path class="lin" d="M230 220 C290 220 290 380 350 380"/>
+    <rect class="caja" x="350" y="20" width="250" height="80" rx="10"/><text class="tx" x="475" y="70" text-anchor="middle">cuenta 01</text>
+    <rect class="caja" x="350" y="180" width="250" height="80" rx="10"/><text class="tx" x="475" y="230" text-anchor="middle">cuenta 02</text>
+    <text class="tx-s" x="475" y="315" text-anchor="middle">⋮</text>
+    <rect class="caja" x="350" y="340" width="250" height="80" rx="10"/><text class="tx" x="475" y="390" text-anchor="middle">cuenta 22</text>
+    <path class="lin" d="M600 60 C660 60 660 220 720 220"/><path class="lin" d="M600 220 L720 220"/><path class="lin" d="M600 380 C660 380 660 220 720 220"/>
+    <rect class="caja-a" x="720" y="130" width="300" height="180" rx="14"/>
+    <text class="num-m" x="870" y="212" text-anchor="middle">10</text><text class="tx-s" x="870" y="256" text-anchor="middle">hilos en paralelo</text>
+    <path class="lin" d="M1020 220 L1110 220"/><polygon class="rel-t" points="1110,208 1132,220 1110,232"/>
+    <rect class="caja-c" x="1140" y="150" width="270" height="140" rx="14"/>
+    <text class="num-m" x="1275" y="214" text-anchor="middle">2.427</text><text class="tx-s" x="1275" y="256" text-anchor="middle">recursos</text>
+  </svg>
+  <aside class="notas"><p>Un login de Identity Center, un perfil de solo lectura por cuenta, sin llaves guardadas. 451 tareas con 10 hilos y reintentos adaptativos de botocore para el throttling. Un AccessDenied queda registrado y la corrida sigue.</p><p>45 colectores: cómputo, datos, red, observabilidad. Si la org no tiene SSO, también soporta AssumeRole.</p></aside>
+</section>
+
+<section class="slide" data-zona="2" data-titulo="I · Dónde corregí a la IA (2)">
+  <div class="eyebrow"><span class="fase">I</span>Dónde corregí a la IA</div>
+  <h2>Errores por corrida</h2>
+  <svg class="v" viewBox="0 0 1410 460" role="img" aria-label="Errores: 154 en la primera corrida, 6 en la segunda, 0 en la tercera">
+    <line class="eje" x1="0" y1="380" x2="1410" y2="380"/>
+    <rect class="lleno-c" x="60" y="150" width="260" height="230" rx="8"/><text class="num" x="190" y="130" text-anchor="middle">154</text>
+    <rect class="lleno-a" x="560" y="367" width="260" height="13" rx="4"/><text class="num" x="690" y="345" text-anchor="middle">6</text>
+    <text class="num" x="1190" y="345" text-anchor="middle">0</text>
+    <text class="tx" x="190" y="430" text-anchor="middle">ViewOnlyAccess</text>
+    <text class="tx" x="690" y="430" text-anchor="middle">1ª policy</text>
+    <text class="tx" x="1190" y="430" text-anchor="middle">policy final</text>
+  </svg>
+  <aside class="notas"><p>Casi todos los errores decían lo mismo: UnauthorizedOperation. ViewOnlyAccess no trae Cost Explorer, Transit Gateway, VPN, tags de ELB ni alias de KMS. Un solo bug real: pedirle FifoQueue a una cola SQS estándar.</p><p>La policy del repo es el resultado: exactamente lo que piden los colectores y AWS Doctor.</p></aside>
+</section>
+
+<!-- ================= V ================= -->
+<section class="slide" data-zona="3" data-titulo="V · 388 hallazgos">
+  <div class="eyebrow"><span class="fase">V</span>Validar</div>
+  <h2>388 hallazgos en 16 segundos</h2>
+  <svg class="v" viewBox="0 0 1410 440" role="img" aria-label="Hallazgos por severidad: 78 altos, 116 medios, 194 bajos">
+    <rect class="sev-alta" x="0" y="40" width="283" height="130" rx="10"/>
+    <rect class="sev-media" x="287" y="40" width="417" height="130" rx="10"/>
+    <rect class="sev-baja" x="708" y="40" width="702" height="130" rx="10"/>
+    <text class="num-sev" x="24" y="132">78</text><text class="num-sev" x="311" y="132">116</text><text class="num-sev" x="732" y="132">194</text>
+    <text class="tx" x="0" y="214">alta</text><text class="tx" x="287" y="214">media</text><text class="tx" x="708" y="214">baja</text>
+    <rect class="caja" x="0" y="270" width="450" height="150" rx="12"/><text class="ttl" x="30" y="330">AWS Doctor</text><text class="tx-s" x="30" y="374">desperdicio</text>
+    <rect class="caja" x="480" y="270" width="450" height="150" rx="12"/><text class="ttl" x="510" y="330">Cruce con la factura</text><text class="tx-s" x="510" y="374">lo que no cuadra</text>
+    <rect class="caja" x="960" y="270" width="450" height="150" rx="12"/><text class="ttl" x="990" y="330">Reglas</text><text class="tx-s" x="990" y="374">riesgo</text>
+  </svg>
+  <aside class="notas"><p>Tres fuentes. AWS Doctor (open source, elC0mpa/aws-doctor): volúmenes sueltos, IPs libres, RDS sin conexiones, snapshots viejos; 48 corridas cuenta × región. El cruce con la factura: se cobra y no lo veo, servicios sin colector, regiones sorpresa. Reglas: SGs abiertos, RDS públicos o sin cifrar, buckets sin bloqueo público, recursos sin dueño.</p><p>Unos USD 760/mes de desperdicio directo. Cada hallazgo trae cuenta, región, ID y costo.</p></aside>
+</section>
+
+<section class="slide" data-zona="3" data-titulo="V · Dónde corregí a la IA (3)">
+  <div class="eyebrow"><span class="fase">V</span>Dónde corregí a la IA</div>
+  <h2>"Se cobra pero no está"</h2>
+  <svg class="v" viewBox="0 0 1410 400" role="img" aria-label="Costo mensual de RDS en cuatro cuentas, marzo a agosto">
+<text class="ttl" x="0" y="30">Management</text>
+<text class="tx-s" x="0" y="64">Cuota de reservas</text>
+<line class="eje" x1="0" y1="300" x2="320" y2="300"/>
+<polygon class="area" points="10.0,300 10.0,300.0 70.0,300.0 130.0,141.0 190.0,101.9 250.0,95.1 310.0,95.1 310.0,300"/>
+<polyline class="lin-a" points="10.0,300.0 70.0,300.0 130.0,141.0 190.0,101.9 250.0,95.1 310.0,95.1"/>
+<circle class="rel-ar" cx="310.0" cy="95.1" r="8"/>
+<text class="mini" x="10.0" y="334" text-anchor="middle">mar</text>
+<text class="mini" x="310.0" y="334" text-anchor="middle">ago</text>
+<text class="veredicto" x="0" y="386">no es un recurso</text>
+<text class="ttl" x="363" y="30">Analítica</text>
+<text class="tx-s" x="363" y="64">Cluster zombie</text>
+<line class="eje" x1="363" y1="300" x2="683" y2="300"/>
+<polygon class="area" points="373.0,300 373.0,126.0 433.0,84.3 493.0,121.4 553.0,144.3 613.0,172.8 673.0,172.8 673.0,300"/>
+<polyline class="lin-a" points="373.0,126.0 433.0,84.3 493.0,121.4 553.0,144.3 613.0,172.8 673.0,172.8"/>
+<circle class="rel-ar" cx="673.0" cy="172.8" r="8"/>
+<text class="mini" x="373.0" y="334" text-anchor="middle">mar</text>
+<text class="mini" x="673.0" y="334" text-anchor="middle">ago</text>
+<text class="veredicto" x="363" y="386">borrado este mes</text>
+<text class="ttl" x="726" y="30">Cuenta en cierre A</text>
+<text class="tx-s" x="726" y="64">Base de datos</text>
+<line class="eje" x1="726" y1="300" x2="1046" y2="300"/>
+<polygon class="area" points="736.0,300 736.0,228.7 796.0,231.0 856.0,228.7 916.0,280.0 976.0,300.0 1036.0,300.0 1036.0,300"/>
+<polyline class="lin-a" points="736.0,228.7 796.0,231.0 856.0,228.7 916.0,280.0 976.0,300.0 1036.0,300.0"/>
+<circle class="rel-ar" cx="1036.0" cy="300.0" r="8"/>
+<text class="mini" x="736.0" y="334" text-anchor="middle">mar</text>
+<text class="mini" x="1036.0" y="334" text-anchor="middle">ago</text>
+<text class="veredicto" x="726" y="386">borrada en junio</text>
+<text class="ttl" x="1089" y="30">Cuenta en cierre B</text>
+<text class="tx-s" x="1089" y="64">Base de datos</text>
+<line class="eje" x1="1089" y1="300" x2="1409" y2="300"/>
+<polygon class="area" points="1099.0,300 1099.0,105.3 1159.0,284.2 1219.0,300.0 1279.0,300.0 1339.0,300.0 1399.0,300.0 1399.0,300"/>
+<polyline class="lin-a" points="1099.0,105.3 1159.0,284.2 1219.0,300.0 1279.0,300.0 1339.0,300.0 1399.0,300.0"/>
+<circle class="rel-ar" cx="1399.0" cy="300.0" r="8"/>
+<text class="mini" x="1099.0" y="334" text-anchor="middle">mar</text>
+<text class="mini" x="1399.0" y="334" text-anchor="middle">ago</text>
+<text class="veredicto" x="1089" y="386">borrada en abril</text>
+  </svg>
+  <aside class="notas"><p>El hallazgo más caro: USD 1.670/mes de RDS facturado sin ninguna base de datos en el inventario. Lo revisé mes a mes antes de creerle.</p><p>Ninguno era un recurso escondido. Management: cuota de reservas. Analítica: un cluster zombie que se borró este mes. Dos cuentas en cierre: bases que dejaron de cobrar en abril y junio. Ajustes: contar solo uso y mirar el último mes, no el promedio.</p></aside>
+</section>
+
+<section class="slide" data-zona="3" data-titulo="V · La base del iceberg">
+  <div class="eyebrow"><span class="fase">V</span>La base del iceberg</div>
+  <h2>La factura no ve lo gratis</h2>
+  <div class="fila" style="align-items:center">
+    <svg class="v" viewBox="0 0 420 420" style="flex:none;width:420px" role="img" aria-label="Cobertura de 99,5 por ciento">
+      <circle class="dona-pista" cx="210" cy="210" r="170"/>
+      <circle class="dona" cx="210" cy="210" r="170" stroke-dasharray="1062.8 1068.1" transform="rotate(-90 210 210)"/>
+      <text class="num" x="210" y="232" text-anchor="middle">99,5%</text>
+      <text class="tx-s" x="210" y="282" text-anchor="middle">cobertura</text>
+    </svg>
+    <div class="col">
+      <p class="lead">Dos mapas: la factura y la <em>Tagging API</em>.</p>
+      <p class="lead">Lo que falta vuelve a escanearse solo.</p>
+      <div class="panel"><p><strong>Siempre se puede traspapelar algo.</strong> El método lo mide.</p></div>
+    </div>
+  </div>
+  <aside class="notas"><p>Lambdas en free tier, alarmas, parámetros de SSM, stacks: existen y no cobran. El mapa del billing nunca los manda a buscar.</p><p>Oráculo independiente: la Tagging API. Lo que ve y el inventario no, vuelve a la fase I como tarea extra. 99,5% = 1.120 de 1.126 en los tipos que el método sabe inventariar.</p><p>La salvedad honesta: el oráculo solo ve lo que tiene o tuvo tags. El método no promete "todo": mide su cobertura y dice qué colector escribir después.</p></aside>
+</section>
+
+<!-- ================= E ================= -->
+<section class="slide" data-zona="4" data-titulo="E · La carta náutica">
+  <div class="eyebrow"><span class="fase">E</span>Esquematizar</div>
+  <h2>22 diagramas en un segundo</h2>
+  <svg class="v" viewBox="0 0 1410 500" role="img" aria-label="Ejemplo de diagrama generado: VPC con subredes públicas y privadas">
+    <rect class="caja" x="0" y="0" width="1100" height="490" rx="16"/><text class="ttl" x="28" y="46">VPC · 10.0.0.0/16</text>
+    <rect class="sub-pub" x="28" y="72" width="510" height="170" rx="10"/><text class="tx-s" x="48" y="108">pública · AZ a</text>
+    <rect class="sub-pub" x="562" y="72" width="510" height="170" rx="10"/><text class="tx-s" x="582" y="108">pública · AZ b</text>
+    <rect class="sub-priv" x="28" y="266" width="510" height="200" rx="10"/><text class="tx-s" x="48" y="302">privada · AZ a</text>
+    <rect class="sub-priv" x="562" y="266" width="510" height="200" rx="10"/><text class="tx-s" x="582" y="302">privada · AZ b</text>
+    <rect class="nodo-a" x="400" y="140" width="300" height="76" rx="10"/><text class="tx" x="550" y="188" text-anchor="middle">ALB</text>
+    <path class="lin" d="M500 216 L270 340"/><path class="lin" d="M600 216 L820 340"/>
+    <rect class="nodo" x="160" y="340" width="220" height="76" rx="10"/><text class="tx" x="270" y="388" text-anchor="middle">EC2</text>
+    <rect class="nodo" x="710" y="340" width="220" height="76" rx="10"/><text class="tx" x="820" y="388" text-anchor="middle">EC2</text>
+    <rect class="nodo-c" x="420" y="390" width="250" height="60" rx="10"/><text class="tx" x="545" y="430" text-anchor="middle">RDS · alerta</text>
+    <rect class="nodo-a" x="1150" y="200" width="260" height="90" rx="12"/><text class="tx" x="1280" y="254" text-anchor="middle">Transit GW</text>
+    <path class="lin" d="M1100 245 L1150 245"/>
+  </svg>
+  <aside class="notas"><p>Una vista de la organización y una por cuenta, con una página por región. VPC → subredes públicas y privadas por AZ → recursos en su subred. Los recursos con hallazgos altos llevan borde de alerta. Más un reporte HTML navegable que funciona offline.</p><p>La regla: la IA es buena dibujando y también inventa conexiones. El diagrama sale de relations, nunca de lo que el modelo cree.</p><p>Aquí abrir un .drawio real de la carpeta anonimizada.</p></aside>
+</section>
+
+<section class="slide" data-zona="4" data-titulo="Anonimizar">
+  <div class="eyebrow">Antes de mostrar nada</div>
+  <h2>Anonimizar y verificar</h2>
+  <div class="antes-despues">
+    <div class="ad"><span class="etq">Real</span><code>arn:aws:rds:us-east-1:<b class="coral">7xxxxxxxxxx4</b>:db:<b class="coral">marca</b>-ledger</code></div>
+    <div class="flecha">↓</div>
+    <div class="ad"><span class="etq">Presentable</span><code>arn:aws:rds:us-east-1:<b>cuenta-03</b>:db:<b>empresa</b>-ledger</code></div>
+  </div>
+  <div class="cifras" style="--n:2">
+    <div class="cifra"><b class="coral">114</b><span>fugas en la primera corrida</span></div>
+    <div class="cifra"><b>0</b><span>después de corregir</span></div>
+  </div>
+  <aside class="notas"><p>Cada valor real se reemplaza por uno falso estable: la misma cuenta es cuenta-03 en el JSON, el diagrama y el reporte. Al final, una verificación vuelve a buscar cada valor original; si encuentra uno solo, sale con error.</p><p>Encontró 114 fugas: tokens de CloudFormation, IDs de Route 53. Sin esa verificación habrían terminado en una slide como esta.</p></aside>
+</section>
+
+<!-- ================= CON IA ================= -->
+<section class="slide" data-zona="4" data-titulo="Construido con agentes">
+  <div class="eyebrow">Cómo se construyó</div>
+  <h2>Siete agentes, un contrato</h2>
+  <svg class="v" viewBox="0 0 1410 480" role="img" aria-label="Siete agentes alrededor de un contrato común; un script ejecuta contra AWS">
+    <path class="lin" d="M500 240 L230 70"/><path class="lin" d="M500 240 L150 240"/><path class="lin" d="M500 240 L230 410"/>
+    <path class="lin" d="M500 240 L500 40"/><path class="lin" d="M500 240 L500 440"/><path class="lin" d="M500 240 L770 70"/><path class="lin" d="M500 240 L770 410"/>
+    <rect class="caja-a" x="380" y="190" width="240" height="100" rx="14"/><text class="ttl" x="500" y="252" text-anchor="middle">Contrato</text>
+    <rect class="nodo" x="120" y="40" width="220" height="60" rx="30"/><text class="tx" x="230" y="80" text-anchor="middle">Descubrir</text>
+    <rect class="nodo" x="40" y="210" width="220" height="60" rx="30"/><text class="tx" x="150" y="250" text-anchor="middle">Cómputo</text>
+    <rect class="nodo" x="120" y="380" width="220" height="60" rx="30"/><text class="tx" x="230" y="420" text-anchor="middle">Datos</text>
+    <rect class="nodo" x="390" y="10" width="220" height="60" rx="30"/><text class="tx" x="500" y="50" text-anchor="middle">Red</text>
+    <rect class="nodo" x="390" y="410" width="220" height="60" rx="30"/><text class="tx" x="500" y="450" text-anchor="middle">Anonimizar</text>
+    <rect class="nodo" x="660" y="40" width="220" height="60" rx="30"/><text class="tx" x="770" y="80" text-anchor="middle">Validar</text>
+    <rect class="nodo" x="660" y="380" width="220" height="60" rx="30"/><text class="tx" x="770" y="420" text-anchor="middle">Diagramas</text>
+    <line class="separador" x1="960" y1="10" x2="960" y2="470"/>
+    <rect class="caja" x="1010" y="120" width="400" height="90" rx="14"/><text class="tx" x="1210" y="175" text-anchor="middle">Los agentes construyen</text>
+    <rect class="caja-c" x="1010" y="270" width="400" height="90" rx="14"/><text class="tx" x="1210" y="325" text-anchor="middle">El script escanea</text>
+  </svg>
+  <aside class="notas"><p>Primero escribí yo el contrato JSON, la configuración y el colector de referencia. Después, siete agentes construyeron a la vez, ninguno con acceso a AWS: todos prueban con datos sintéticos.</p><p>La separación importa: agentes para construir y analizar; un script determinista, barato y auditable para ejecutar contra la nube.</p></aside>
+</section>
+
+<section class="slide" data-zona="4" data-titulo="Dónde corregí a la IA">
+  <div class="eyebrow">El balance honesto</div>
+  <h2>Siete correcciones</h2>
+  <div class="tarjetas">
+    <div class="tarjeta"><b>1</b><span>Permisos cortos</span></div>
+    <div class="tarjeta"><b>2</b><span>Ruido de CloudTrail</span></div>
+    <div class="tarjeta"><b>3</b><span>Reservas fantasma</span></div>
+    <div class="tarjeta"><b>4</b><span>Recursos ya borrados</span></div>
+    <div class="tarjeta"><b>5</b><span>Lo gratis no factura</span></div>
+    <div class="tarjeta"><b>6</b><span>Agentes con formatos distintos</span></div>
+    <div class="tarjeta alerta"><b>7</b><span>"Ya limpié los datos"</span></div>
+  </div>
+  <aside class="notas"><p>1) ViewOnlyAccess: 154 errores. 2) CloudTrail inventaba regiones sorpresa. 3) Las cuotas de reservas parecían recursos. 4) "Se cobra pero no está" era "ya se borró". 5) La factura no ve lo gratis: hizo falta un segundo mapa. 6) Dos agentes guardaron el mismo dato (un peering) con formas distintas; lo atrapé al integrar.</p><p>7) Un agente dijo que había limpiado los datos reales de sus tests y quedaba un hash del cliente. Lo encontré buscando en el repo. La IA reporta lo que cree que hizo: verifica siempre lo que toca datos reales.</p></aside>
+</section>
+
+<section class="slide" data-zona="4" data-titulo="Una tarde">
+  <div class="eyebrow">De cero a la carta náutica</div>
+  <h2>4 minutos 48 segundos</h2>
+  <svg class="v" viewBox="0 0 1410 240" role="img" aria-label="Duración de cada fase en la corrida completa">
+<rect class="seg-a" x="0.0" y="40" width="68.9" height="110" rx="8"/>
+<text class="seg-t" x="14.0" y="108">D</text>
+<rect class="seg-b" x="72.9" y="40" width="496.7" height="110" rx="8"/>
+<text class="seg-t" x="86.9" y="108">I</text>
+<text class="mini" x="72.9" y="190">Inventariar</text><text class="mini" x="72.9" y="222">103 s</text>
+<rect class="seg-a" x="573.6" y="40" width="78.6" height="110" rx="8"/>
+<text class="seg-t" x="587.6" y="108">C</text>
+<rect class="seg-b" x="656.2" y="40" width="521.0" height="110" rx="8"/>
+<text class="seg-t" x="670.2" y="108">I₂</text>
+<text class="mini" x="656.2" y="190">Segunda pasada</text><text class="mini" x="656.2" y="222">108 s</text>
+<rect class="seg-a" x="1181.2" y="40" width="73.8" height="110" rx="8"/>
+<text class="seg-t" x="1195.2" y="108">C₂</text>
+<rect class="seg-b" x="1259.0" y="40" width="88.4" height="110" rx="8"/>
+<text class="seg-t" x="1273.0" y="108">V</text>
+<rect class="seg-a" x="1351.4" y="40" width="44.6" height="110" rx="8"/>
+<text class="seg-t" x="1365.4" y="108">A</text>
+  </svg>
+  <p class="lead"><span class="tachado">Semanas</span> → una tarde para construirlo, cinco minutos para repetirlo.</p>
+  <aside class="notas"><p>Corrida completa real: Descubrir 15 s, Inventariar 103 s, cobertura 17 s, segunda pasada 108 s, cobertura 16 s, Validar 19 s, diagramas y anonimizar 10 s.</p><p>La mayor parte de la tarde se fue en integrar y corregir, no en escribir código.</p></aside>
+</section>
+
+<section class="slide" data-zona="4" data-titulo="Tres reglas para IA en infra">
+  <div class="eyebrow">Si se llevan una sola slide</div>
+  <h2>IA en infraestructura real</h2>
+  <div class="iconos" style="--n:3">
+    <div class="icono"><svg viewBox="0 0 80 80"><path class="ic" d="M6 40 C20 18 60 18 74 40 C60 62 20 62 6 40 Z"/><circle class="ic" cx="40" cy="40" r="10"/></svg><b>Solo lectura, siempre</b></div>
+    <div class="icono"><svg viewBox="0 0 80 80"><rect class="ic" x="12" y="20" width="56" height="44" rx="6"/><line class="ic" x1="24" y1="34" x2="56" y2="34"/><line class="ic" x1="24" y1="48" x2="46" y2="48"/></svg><b>Los datos mandan</b></div>
+    <div class="icono"><svg viewBox="0 0 80 80"><circle class="ic" cx="40" cy="26" r="14"/><path class="ic" d="M14 72 C14 52 66 52 66 72"/></svg><b>Producción la corres tú</b></div>
+  </div>
+  <aside class="notas"><p>El rol del agente no puede escribir, y lo compruebas. Lo que dice el modelo se verifica contra AWS; lo que dibuja, contra relations. La IA prepara el comando y su reversa; la persona lo revisa y lo ejecuta.</p><p>"No se van con mi script. Se van con un método que pueden correr el lunes." Pausa para preguntas; luego seguridad y código.</p></aside>
+</section>
+
+<!-- ================= SEGURIDAD ================= -->
+<section class="slide portada" data-zona="5" data-titulo="Seguridad · Portada">
+  <div class="eyebrow">Segunda inmersión</div>
+  <h1 style="font-size:150px">Seguridad</h1>
+  <p class="lead">Cientos de llamadas a todas tus cuentas, con tu identidad. Sin abrir ninguna puerta.</p>
+  <aside class="notas"><p>La parte más importante si lo van a correr en su org, sobre todo si es regulada.</p></aside>
+</section>
+
+<section class="slide" data-zona="5" data-titulo="Seguridad · Tu identidad, no tus permisos">
+  <div class="eyebrow">Principio</div>
+  <h2>Tu identidad, no tus permisos</h2>
+  <svg class="v" viewBox="0 0 1410 460" role="img" aria-label="Un mismo usuario SSO con dos sesiones: administradora y de solo lectura para el agente">
+    <circle class="ic-g" cx="705" cy="70" r="46"/><text class="tx" x="705" y="160" text-anchor="middle">tu usuario SSO</text>
+    <path class="lin" d="M705 180 C705 230 340 220 340 280"/><path class="lin" d="M705 180 C705 230 1070 220 1070 280"/>
+    <rect class="caja-c" x="140" y="280" width="400" height="160" rx="16"/><text class="ttl" x="340" y="345" text-anchor="middle">Tú</text><text class="tx" x="340" y="395" text-anchor="middle">AdministratorAccess</text>
+    <rect class="caja-ok" x="870" y="280" width="400" height="160" rx="16"/><text class="ttl" x="1070" y="345" text-anchor="middle">El agente</text><text class="tx" x="1070" y="395" text-anchor="middle">DIVE_ReadOnly</text>
+  </svg>
+  <aside class="notas"><p>Lo que suele pasar: el perfil de todos los días es AdministratorAccess. Si el agente se equivoca en un comando, puede borrar en producción.</p><p>DIVE: mismo login SSO, sesión distinta y de solo lectura. El peor error posible es una lectura de más. Credenciales temporales, sesión de 4 horas, cada llamada en CloudTrail a tu nombre.</p></aside>
+</section>
+
+<section class="slide" data-zona="5" data-titulo="Seguridad · El permiso justo">
+  <div class="eyebrow">Fase 0</div>
+  <h2>Ni corto ni de más</h2>
+  <svg class="v" viewBox="0 0 1410 420" role="img" aria-label="Escala de permisos: ViewOnlyAccess no alcanza, DIVE_ReadOnly es justo, ReadOnlyAccess lee datos">
+    <rect class="zona-ok" x="430" y="120" width="560" height="120" rx="12"/>
+    <text class="tx" x="710" y="100" text-anchor="middle">alcanza y no lee datos</text>
+    <line class="eje-g" x1="0" y1="180" x2="1410" y2="180"/><polygon class="rel-t" points="1410,168 1410,192 1430,180"/>
+    <circle class="marca-no" cx="180" cy="180" r="30"/><circle class="marca-ok" cx="710" cy="180" r="34"/><circle class="marca-no" cx="1230" cy="180" r="30"/>
+    <text class="ttl" x="180" y="300" text-anchor="middle">ViewOnly</text><text class="tx-c" x="180" y="344" text-anchor="middle">✗ no alcanza</text>
+    <text class="ttl" x="710" y="300" text-anchor="middle">DIVE_ReadOnly</text><text class="tx-ok" x="710" y="344" text-anchor="middle">✓ justo</text>
+    <text class="ttl" x="1230" y="300" text-anchor="middle">ReadOnly</text><text class="tx-c" x="1230" y="344" text-anchor="middle">✗ lee datos</text>
+    <text class="tx-s" x="0" y="400">menos permisos</text><text class="tx-s" x="1410" y="400" text-anchor="end">más permisos</text>
+  </svg>
+  <aside class="notas"><p>ViewOnlyAccess no trae Cost Explorer, TGW, VPN ni KMS. ReadOnlyAccess incluye s3:GetObject y scans de DynamoDB: lee datos. DIVE_ReadOnly = ViewOnly + una inline mínima (setup/readonly-policy.json), donde cada permiso salió de un error real de la primera corrida.</p><p>Puede listar un secreto, nunca leer su valor: secretsmanager:GetSecretValue no está.</p></aside>
+</section>
+
+<section class="slide" data-zona="5" data-titulo="Seguridad · Crear el acceso">
+  <div class="eyebrow">Fase 0 · el flujo</div>
+  <h2>Cuatro pasos, uno es tuyo</h2>
+  <div class="pasos-h">
+    <div class="paso"><b>1</b><strong>Dry-run</strong><code>crear_permission_set.sh</code></div>
+    <div class="paso"><b>2</b><strong>Revisas</strong><code>lo que haría</code></div>
+    <div class="paso tuyo"><b>3</b><strong>Lo aplicas tú</strong><code>--apply</code></div>
+    <div class="paso"><b>4</b><strong>Reversa</strong><code>eliminar_permission_set.sh</code></div>
+  </div>
+  <aside class="notas"><p>El dry-run muestra qué haría sin cambiar nada. Lo aplica una persona, no el agente. Después, generar_perfiles.py escribe perfiles aislados en ~/.aws/dive-config, sin tocar tu ~/.aws/config. Al terminar, la reversa.</p><p>Asignado a un usuario, no a un grupo. Re-ejecutable si cambias la policy. En mi caso la IA preparó los comandos y yo los ejecuté.</p></aside>
+</section>
+
+<section class="slide" data-zona="5" data-titulo="Seguridad · Comprobar, no suponer">
+  <div class="eyebrow">La prueba</div>
+  <h2>¿De verdad no puede escribir?</h2>
+<pre class="grande"><span class="c"># --dry-run evalúa el permiso sin ejecutar nada</span>
+aws ec2 create-tags <span class="w">--dry-run</span> \
+    --resources vpc-0a1b2c3d --tags Key=dive,Value=test \
+    --profile dive-111122223333
+
+<span class="w">UnauthorizedOperation</span></pre>
+  <aside class="notas"><p>Ojo: con un ID inventado, AWS valida primero que el recurso exista y responde NotFound, que no prueba nada. Me pasó en vivo. Con una VPC real: UnauthorizedOperation.</p></aside>
+</section>
+
+<section class="slide" data-zona="5" data-titulo="Seguridad · Lo que nunca sale">
+  <div class="eyebrow">Sin secretos en la salida</div>
+  <h2>Lo que nunca sale</h2>
+  <div class="chips">
+    <span class="chip">Variables de Lambda</span><span class="chip">UserData de EC2</span><span class="chip">Task definitions</span>
+    <span class="chip">Parameters de CloudFormation</span><span class="chip">Valores de SSM</span><span class="chip">Secretos</span>
+    <span class="chip">PSKs de VPN</span><span class="chip">Emails de SNS</span><span class="chip">Input de EventBridge</span><span class="chip">Policies completas</span>
+  </div>
+  <aside class="notas"><p>Un describe inocente puede traer un password. Cada regla tiene un test que mete un secreto falso y comprueba que no llega a la salida. Las access policies se resumen en un booleano: ¿es Principal *?</p><p>Y el agente no lee el JSON crudo: trabaja sobre resúmenes.</p></aside>
+</section>
+
+<section class="slide" data-zona="5" data-titulo="Seguridad · Capas">
+  <div class="eyebrow">Defensa en profundidad</div>
+  <h2>Cuatro capas</h2>
+  <svg class="v" viewBox="0 0 1410 500" role="img" aria-label="Cuatro capas de defensa concéntricas">
+    <rect class="capa-1" x="205" y="0" width="1000" height="500" rx="40"/>
+    <rect class="capa-2" x="305" y="80" width="800" height="340" rx="34"/>
+    <rect class="capa-3" x="405" y="160" width="600" height="180" rx="28"/>
+    <rect class="capa-4" x="505" y="215" width="400" height="70" rx="20"/>
+    <text class="tx" x="705" y="50" text-anchor="middle">Datos del cliente fuera del repo</text>
+    <text class="tx" x="705" y="130" text-anchor="middle">Scripts revisados, no comandos sueltos</text>
+    <text class="tx" x="705" y="203" text-anchor="middle">Comandos de escritura bloqueados</text>
+    <text class="ttl" x="705" y="262" text-anchor="middle">Rol sin escritura</text>
+  </svg>
+  <aside class="notas"><p>Capa 1: el rol no puede escribir. Capa 2: el agente tiene bloqueados los comandos de escritura (deny en .claude/settings.json: aws * create*, delete*, put*, update*, terminate*). Capa 3: la IA escribe scripts revisados. Capa 4: datos del cliente fuera del repo y búsqueda de cuentas y nombres antes de cada commit.</p><p>Si una falla, la siguiente atrapa el error. Revisar la sintaxis exacta de las reglas en su versión de Claude Code.</p></aside>
+</section>
+
+<section class="slide" data-zona="5" data-titulo="Seguridad · Tres puntos de partida">
+  <div class="eyebrow">Cada organización llega distinta</div>
+  <h2>¿Desde dónde arrancas?</h2>
+  <svg class="v" viewBox="0 0 1410 460" role="img" aria-label="Árbol de decisión según el acceso disponible en la organización">
+    <rect class="caja" x="0" y="20" width="400" height="110" rx="14"/><text class="tx" x="200" y="88" text-anchor="middle">Identity Center</text>
+    <rect class="caja" x="0" y="175" width="400" height="110" rx="14"/><text class="tx" x="200" y="243" text-anchor="middle">Organizations sin SSO</text>
+    <rect class="caja-c" x="0" y="330" width="400" height="110" rx="14"/><text class="tx" x="200" y="398" text-anchor="middle">Solo OrgAccessRole</text>
+    <path class="lin" d="M400 75 L560 75"/><polygon class="rel-t" points="560,63 582,75 560,87"/>
+    <path class="lin" d="M400 230 L560 230"/><polygon class="rel-t" points="560,218 582,230 560,242"/>
+    <path class="lin" d="M400 385 L560 385"/><polygon class="rel-t" points="560,373 582,385 560,397"/>
+    <text class="ttl" x="610" y="88">Permission set</text>
+    <text class="ttl" x="610" y="243">Rol con StackSets</text>
+    <text class="ttl-c" x="610" y="398">Es admin: despliega con él, no escanees</text>
+  </svg>
+  <aside class="notas"><p>Identity Center: permission set DIVE_ReadOnly con el script de la fase 0, el caso ideal. Organizations sin SSO: un rol DIVE_ReadOnly desplegado con StackSets y access_mode: assume_role. Solo OrganizationAccountAccessRole: es admin; úsalo para desplegar el rol de lectura, nunca para escanear.</p><p>El tercer caso es el más común en organizaciones que se volvieron inmanejables.</p></aside>
+</section>
+
+<!-- ================= CÓDIGO (condensado) ================= -->
+<section class="slide" data-zona="6" data-titulo="Código · El repo en una pantalla">
+  <div class="eyebrow">Tercera inmersión · el código</div>
+  <h2>El repo en una pantalla</h2>
+  <svg class="v" viewBox="0 0 1410 470" role="img" aria-label="Las fases del repositorio conectadas por sus archivos JSON">
+    <rect class="caja-a" x="0" y="40" width="210" height="150" rx="14"/><text class="ttl" x="105" y="105" text-anchor="middle">setup/</text><text class="tx-s" x="105" y="148" text-anchor="middle">acceso</text>
+    <rect class="caja" x="240" y="40" width="210" height="150" rx="14"/><text class="ttl" x="345" y="105" text-anchor="middle">1-descubrir</text><text class="tx-s" x="345" y="148" text-anchor="middle">factura</text>
+    <rect class="caja" x="480" y="40" width="210" height="150" rx="14"/><text class="ttl" x="585" y="105" text-anchor="middle">2-inventariar</text><text class="tx-s" x="585" y="148" text-anchor="middle">45 colectores</text>
+    <rect class="caja" x="720" y="40" width="210" height="150" rx="14"/><text class="ttl" x="825" y="105" text-anchor="middle">3-validar</text><text class="tx-s" x="825" y="148" text-anchor="middle">+ cobertura</text>
+    <rect class="caja" x="960" y="40" width="210" height="150" rx="14"/><text class="ttl" x="1065" y="105" text-anchor="middle">4-esquematizar</text><text class="tx-s" x="1065" y="148" text-anchor="middle">drawio + html</text>
+    <rect class="caja-c" x="1200" y="40" width="210" height="150" rx="14"/><text class="ttl" x="1305" y="105" text-anchor="middle">anonimizar</text><text class="tx-s" x="1305" y="148" text-anchor="middle">verifica</text>
+    <text class="json" x="345" y="260" text-anchor="middle">discovery.json</text>
+    <text class="json" x="585" y="260" text-anchor="middle">inventory.json</text>
+    <text class="json" x="825" y="260" text-anchor="middle">findings.json</text>
+    <text class="json" x="1065" y="260" text-anchor="middle">diagramas/</text>
+    <path class="lin" d="M825 300 C825 380 585 380 585 300"/><polygon class="rel-t" points="573,302 585,280 597,302"/>
+    <text class="tx-s" x="705" y="420" text-anchor="middle">cobertura.json → tareas extra</text>
+  </svg>
+  <aside class="notas"><p>Cada carpeta es una fase, y cada fase deja un JSON que lee la siguiente (CONTRATO.md). La flecha de vuelta es el ciclo de cobertura: lo que el oráculo vio y el inventario no, vuelve a la fase 2.</p><p>Cada fase trae su prompt.md versionado y ~90 tests con Stubber: ninguno llama a AWS. Abrir el editor aquí y recorrer el árbol.</p></aside>
+</section>
+
+<section class="slide" data-zona="6" data-titulo="Código · Tres piezas clave">
+  <div class="eyebrow">Código · lo esencial</div>
+  <h2>Tres piezas clave</h2>
+  <div class="codigos">
+    <div class="col"><div class="archivo">colectores/ec2.py</div>
+<pre>NAME     = <span class="s">"ec2"</span>
+TRIGGERS = [<span class="s">"…EC2 - Compute"</span>]
+
+<span class="k">def</span> <span class="f">collect</span>(session,
+            region, cuenta):
+    <span class="c"># Describe/List/Get</span>
+    <span class="k">return</span> [recurso(...)]</pre></div>
+    <div class="col"><div class="archivo">inventariar.py</div>
+<pre><span class="c"># solo donde facturó</span>
+<span class="k">if</span> set(servicios) &amp;
+   set(mod.TRIGGERS):
+    tareas.append(...)
+
+ThreadPoolExecutor(10)
+retries=<span class="s">"adaptive"</span></pre></div>
+    <div class="col"><div class="archivo">cobertura.py</div>
+<pre><span class="c"># oráculo</span>
+get_resources()
+
+<span class="k">if not</span> cubierto(arn):
+    tareas_extra.add(
+      colector_para(tipo))</pre></div>
+  </div>
+  <aside class="notas"><p>1) El contrato de un colector: NAME, TRIGGERS (nombres exactos de Cost Explorer) y collect(). Agregar un servicio es copiar esta forma. 2) El planificador: solo se crean tareas donde la factura mostró uso; credenciales congeladas por cuenta, una Session por hilo, reintentos adaptativos. 3) El ciclo de cobertura: lo que la Tagging API ve y el inventario no, se convierte en tarea extra.</p></aside>
+</section>
+
+<!-- ================= EN CASA ================= -->
+<section class="slide" data-zona="7" data-titulo="En casa · Los comandos">
+  <div class="eyebrow">Cuarta inmersión · ejecútalo en tu organización</div>
+  <h2>De cero a la carta náutica</h2>
+  <div class="chips pequenos"><span class="chip ok">Cuenta management</span><span class="chip ok">Python 3.10+ · uv · AWS CLI</span><span class="chip ok">~USD 0,20</span><span class="chip">Avisa a seguridad</span></div>
+<pre class="grande">bash setup/crear_permission_set.sh --profile mgmt --user yo <span class="w">--apply</span>
+python setup/generar_perfiles.py
+python 1-descubrir/descubrir.py
+python 2-inventariar/inventariar.py
+python 3-validar/cobertura.py  &amp;&amp;  python 2-inventariar/inventariar.py
+python 3-validar/validar.py
+python 4-esquematizar/esquematizar.py
+python anonimizar/anonimizar.py salida/&lt;fecha&gt;</pre>
+  <aside class="notas"><p>Antes: uv venv .venv, instalar requirements, copiar dive.config.example.yaml y poner management_profile y output_dir. Correr crear_permission_set.sh primero SIN --apply (dry-run).</p><p>aws-doctor es opcional (--sin-doctor). Revisar cada entregable entre fases: ese es el checkpoint humano. Si trabajan para un cliente, config y salidas fuera del repo desde el primer minuto.</p></aside>
+</section>
+
+<section class="slide" data-zona="7" data-titulo="En casa · Tu primer colector">
+  <div class="eyebrow">Para contribuir</div>
+  <h2>Tu primer colector</h2>
+  <div class="pasos-h cinco">
+    <div class="paso"><b>1</b><strong>Busca</strong><code>"sin colector"</code></div>
+    <div class="paso"><b>2</b><strong>Copia</strong><code>ec2.py</code></div>
+    <div class="paso"><b>3</b><strong>Pide</strong><code>contrato + reglas</code></div>
+    <div class="paso"><b>4</b><strong>Testea</strong><code>secreto falso</code></div>
+    <div class="paso tuyo"><b>5</b><strong>Mide</strong><code>cobertura ↑</code></div>
+  </div>
+  <aside class="notas"><p>1) Busca en cobertura.md o findings.md un servicio "sin colector". 2) Copia la forma de colectores/ec2.py. 3) Pídele a la IA el colector con el contrato y la regla "solo Describe/List/Get de metadatos". 4) Test con Stubber, incluyendo un secreto falso que no debe salir. 5) Corre la fase I y mira cómo sube la cobertura.</p><p>Invitar a la comunidad a mandar colectores.</p></aside>
+</section>
+
+<section class="slide portada" data-zona="8" data-titulo="Cierre">
+  <div class="marca">🌊 DIVELEARN</div>
+  <h1 style="font-size:130px;max-width:15ch">¿Cuántos recursos tienes corriendo <span>ahora?</span></h1>
+  <div class="autora"><b>Mar Ortiz</b><span>Gracias · Preguntas</span></div>
+  <aside class="notas"><p>Volver a la pregunta del inicio: "deberías poder responder en diez segundos". Agradecer. Abrir preguntas.</p></aside>
+</section>
+
+<!-- pie -->
+<div class="pie" aria-hidden="true"><span class="marca-pie">MÉTODO DIVE</span><span id="pie-titulo"></span><span class="num" id="pie-num"></span></div>
+
+</div>
+</main>
+
+<div class="controles">
+  <button type="button" id="b-prev" aria-label="Slide anterior">←</button>
+  <button type="button" id="b-next" aria-label="Slide siguiente">→</button>
+  <button type="button" id="b-notas" aria-label="Notas y cronómetro">Notas</button>
+  <button type="button" id="b-indice" aria-label="Índice de slides">Índice</button>
+  <button type="button" id="b-full" aria-label="Pantalla completa">⛶</button>
+</div>
+
+<div class="presentadora" id="presentadora" hidden>
+  <div class="cab"><span>Notas · <span id="np-num"></span></span><span class="crono" id="crono">00:00</span></div>
+  <div class="txt" id="np-txt"></div>
+  <div class="sig" id="np-sig"></div>
+</div>
+
+<div class="indice" id="indice" hidden>
+  <h4>Índice</h4>
+  <div class="rejilla" id="rejilla"></div>
+  <p class="ayuda"><kbd>→</kbd> <kbd>Espacio</kbd> siguiente · <kbd>←</kbd> anterior · <kbd>N</kbd> notas y cronómetro · <kbd>T</kbd> reinicia el cronómetro · <kbd>O</kbd> índice · <kbd>F</kbd> pantalla completa · <kbd>Esc</kbd> cerrar</p>
+</div>
+
+<script>
+(function(){
+  const slides=[...document.querySelectorAll('.slide')];
+  const stage=document.getElementById('stage');
+  const deck=document.getElementById('deck');
+  // Cada zona es una pantalla de la columna de agua (900vh). La 8 es el ascenso: vuelve a la superficie.
+  const ZONAS=[
+    {n:'Superficie',m:'0 m'},{n:'Descubrir',m:'−10 m'},{n:'Inventariar',m:'−40 m'},{n:'Validar',m:'−120 m'},
+    {n:'Esquematizar',m:'−200 m'},{n:'Seguridad',m:'−300 m'},{n:'Código',m:'−400 m'},{n:'En casa',m:'−500 m'}
+  ];
+  const etqs=document.getElementById('etqs');
+  ZONAS.forEach((z,k)=>{const d=document.createElement('div');d.className='z';d.dataset.z=k;
+    d.innerHTML=z.n+'<small>'+z.m+'</small>';d.style.top=((k+.5)/9*100)+'%';etqs.appendChild(d)});
+  const columna=document.getElementById('columna'),ventana=document.getElementById('ventana');
+  let i=0, t0=Date.now(), zonaActual=0;
+
+  function escala(){
+    const hud=document.querySelector('.hud').getBoundingClientRect().width;
+    const s=Math.min((window.innerWidth-hud)/1600,window.innerHeight/900);
+    stage.style.transform='translate(-50%,-50%) scale('+s+')';
+  }
+  window.addEventListener('resize',escala);escala();
+
+  function ir(n){
+    n=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,k)=>{s.classList.toggle('activa',k===n);s.classList.toggle('antes',k<n);s.setAttribute('aria-hidden',k===n?'false':'true')});
+    i=n;
+    const z=+slides[n].dataset.zona;
+    const tramo=z===8?0:z;
+    document.documentElement.dataset.z=String(z);
+    if(slides[n].dataset.corte)document.documentElement.dataset.corte='1';else delete document.documentElement.dataset.corte;
+    columna.style.transform='translateY('+(-tramo*100)+'vh)';
+    ventana.style.top=(tramo/9*100)+'%';ventana.style.height=(100/9)+'%';
+    etqs.querySelectorAll('.z').forEach(m=>m.classList.toggle('aqui',+m.dataset.z===tramo));
+    zonaActual=z;
+    document.getElementById('barra').style.width=((n+1)/slides.length*100)+'%';
+    document.getElementById('pie-num').textContent=String(n+1).padStart(2,'0')+' / '+slides.length;
+    document.getElementById('pie-titulo').textContent=n===0?'':slides[n].dataset.titulo;
+    document.getElementById('np-num').textContent=(n+1)+' / '+slides.length+' · '+slides[n].dataset.titulo;
+    const notas=slides[n].querySelector('aside.notas');
+    document.getElementById('np-txt').innerHTML=notas?notas.innerHTML:'<p>Sin notas.</p>';
+    document.getElementById('np-sig').textContent=n<slides.length-1?'Siguiente: '+slides[n+1].dataset.titulo:'Última slide';
+    try{history.replaceState(null,'','#s'+(n+1))}catch(e){}
+    if(slides[n].querySelector('#segundos'))cuenta();else pararCuenta();
+    document.querySelectorAll('#rejilla button').forEach((b,k)=>b.classList.toggle('aqui',k===n));
+  }
+
+  // cuenta regresiva de 10 s
+  let tCuenta=null;
+  function pararCuenta(){if(tCuenta){clearInterval(tCuenta);tCuenta=null}}
+  function cuenta(){
+    pararCuenta();
+    const num=document.getElementById('segundos'),arco=document.getElementById('arco');
+    const L=1037,ini=Date.now();
+    num.textContent='10';arco.style.strokeDashoffset='0';
+    tCuenta=setInterval(()=>{
+      const t=Math.min(10,(Date.now()-ini)/1000);
+      num.textContent=String(Math.ceil(10-t));
+      arco.style.strokeDashoffset=String(L*t/10);
+      arco.style.stroke=t>7?'var(--coral)':'var(--aqua)';
+      if(t>=10){num.textContent='0';pararCuenta()}
+    },100);
+  }
+
+  // índice
+  const rej=document.getElementById('rejilla');
+  slides.forEach((s,k)=>{const b=document.createElement('button');b.type='button';b.innerHTML='<span>'+(k+1)+'</span>'+s.dataset.titulo;b.addEventListener('click',()=>{ir(k);toggleIndice(false)});rej.appendChild(b)});
+  const indice=document.getElementById('indice');
+  function toggleIndice(v){indice.hidden=!(v===undefined?indice.hidden:v)}
+  const pres=document.getElementById('presentadora');
+  function toggleNotas(){pres.hidden=!pres.hidden}
+  function full(){
+    try{if(!document.fullscreenElement)document.documentElement.requestFullscreen().catch(()=>{});else document.exitFullscreen().catch(()=>{})}catch(e){}
+  }
+
+  document.getElementById('b-prev').onclick=()=>ir(i-1);
+  document.getElementById('b-next').onclick=()=>ir(i+1);
+  document.getElementById('b-notas').onclick=toggleNotas;
+  document.getElementById('b-indice').onclick=()=>toggleIndice();
+  document.getElementById('b-full').onclick=full;
+
+  document.addEventListener('keydown',e=>{
+    if(e.metaKey||e.ctrlKey||e.altKey)return;
+    const k=e.key;
+    if(!indice.hidden&&k==='Escape'){toggleIndice(false);return}
+    if(['ArrowRight','PageDown',' ','Enter'].includes(k)){e.preventDefault();ir(i+1)}
+    else if(['ArrowLeft','PageUp','Backspace'].includes(k)){e.preventDefault();ir(i-1)}
+    else if(k==='Home')ir(0);
+    else if(k==='End')ir(slides.length-1);
+    else if(k==='n'||k==='N')toggleNotas();
+    else if(k==='o'||k==='O')toggleIndice();
+    else if(k==='f'||k==='F')full();
+    else if(k==='t'||k==='T')t0=Date.now();
+    else if(k==='Escape'){pres.hidden=true}
+  });
+
+  // swipe en pantallas táctiles
+  let x0=null;
+  deck.addEventListener('touchstart',e=>{x0=e.touches[0].clientX},{passive:true});
+  deck.addEventListener('touchend',e=>{if(x0===null)return;const dx=e.changedTouches[0].clientX-x0;if(Math.abs(dx)>50)ir(i+(dx<0?1:-1));x0=null});
+
+  // cronómetro
+  setInterval(()=>{const s=Math.floor((Date.now()-t0)/1000);document.getElementById('crono').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')},500);
+
+  // burbujas: muy pocas, lentas
+  const cv=document.getElementById('burbujas'),cx=cv.getContext('2d');
+  const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let B=[];
+  function tam(){cv.width=innerWidth*devicePixelRatio;cv.height=innerHeight*devicePixelRatio}
+  tam();addEventListener('resize',tam);
+  for(let k=0;k<26;k++)B.push({x:Math.random(),y:Math.random(),r:1+Math.random()*3,v:.0004+Math.random()*.0009,o:Math.random()*Math.PI*2});
+  function pinta(){
+    cx.clearRect(0,0,cv.width,cv.height);
+    for(const b of B){
+      b.y-=b.v;b.o+=.01;if(b.y<-.02){b.y=1.02;b.x=Math.random()}
+      const x=(b.x+Math.sin(b.o)*.004)*cv.width,y=b.y*cv.height;
+      cx.beginPath();cx.arc(x,y,b.r*devicePixelRatio,0,Math.PI*2);
+      cx.strokeStyle=(zonaActual<=1||zonaActual===8)?'rgba(0,40,63,.28)':'rgba(198,237,237,.35)';cx.lineWidth=devicePixelRatio;cx.stroke();
+    }
+    requestAnimationFrame(pinta);
+  }
+  if(!reduce)pinta();
+
+  const m=/^#s(\d+)$/.exec(location.hash||'');
+  ir(m?(+m[1]-1):0);
+})();
+</script>

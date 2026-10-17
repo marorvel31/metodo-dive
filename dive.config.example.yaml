@@ -1,0 +1,24 @@
+# Copia este archivo como dive.config.yaml y ajusta los valores de tu organización.
+
+# Perfil de la cuenta management (lee billing y la lista de cuentas)
+management_profile: mi-org-management
+
+# Cómo entrar a cada cuenta:
+#   sso         → perfiles generados por setup/generar_perfiles.py (dive-<account_id>)
+#   assume_role → desde management_profile se asume scan_role_name en cada cuenta
+access_mode: sso
+scan_role_name: DIVE_ReadOnly
+
+billing_months: 6
+threshold_usd: 0.01          # servicios con costo menor se ignoran en la fase 1
+
+include_accounts: []         # vacío = todas las cuentas ACTIVE
+exclude_accounts: []
+
+max_workers: 10              # hilos en paralelo (cuenta × región × colector)
+
+output_dir: salida
+
+anonymize:
+  replace_terms: []          # palabras de marca a reemplazar, ej. ["acme", "acmepay"]
+  costs: rounded             # exact | rounded | percent

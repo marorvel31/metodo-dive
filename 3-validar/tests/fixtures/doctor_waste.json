@@ -1,0 +1,26 @@
+{
+  "account_id": "111111111111",
+  "generated_at": "2026-09-26T15:30:00Z",
+  "has_waste": true,
+  "total_estimated_monthly_cost": 63.41,
+  "summary": [{"category": "EBS Volumes (Unattached)", "count": 1, "estimated_monthly_cost": 10.0}],
+  "unused_elastic_ips": [{"public_ip": "203.0.113.10", "allocation_id": "eipalloc-0001", "estimated_monthly_cost": 3.65}],
+  "unused_ebs_volumes": [{"volume_id": "vol-0001", "size_gib": 100, "status": "available", "estimated_monthly_cost": 10.0}],
+  "stopped_instance_volumes": null,
+  "stopped_instances": [{"instance_id": "i-0bbb", "stopped_at": "2026-06-01T10:00:00Z", "days_ago": 117}],
+  "reserved_instances": [],
+  "unused_load_balancers": [],
+  "unused_amis": [],
+  "orphaned_snapshots": [],
+  "stale_snapshots": [{"snapshot_id": "snap-0001", "volume_exists": false, "used_by_ami": false, "size_gb": 20, "start_time": "2025-01-01T00:00:00Z", "days_since_create": 633, "category": "stale", "reason": "old", "max_potential_savings": 1.0}],
+  "unused_key_pairs": [],
+  "s3_buckets_without_lifecycle": [{"bucket_name": "bucket-a", "creation_date": "2024-01-01"}, {"bucket_name": "bucket-b", "creation_date": "2024-01-01"}],
+  "s3_buckets_with_incomplete_multipart_uploads": [],
+  "cloudwatch_log_groups_without_retention_policy": [
+    {"log_group_name": "/aws/lambda/a", "creation_time": "2025-01-01", "stored_bytes": 1000, "estimated_monthly_cost": 0.0},
+    {"log_group_name": "/aws/lambda/b", "creation_time": "2025-01-01", "stored_bytes": 1000, "estimated_monthly_cost": 0.5}
+  ],
+  "stopped_rds_instances": [],
+  "old_rds_snapshots": [],
+  "idle_rds_instances": [{"db_instance_id": "db-x", "db_instance_class": "db.t3.medium", "engine": "aurora-mysql", "multi_az": false, "allocated_storage_gb": 20, "days_checked": 7, "estimated_monthly_cost": 49.76}]
+}

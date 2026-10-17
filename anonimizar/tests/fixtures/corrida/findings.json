@@ -1,0 +1,11 @@
+{
+  "generated_at": "2026-09-26T16:00:00Z",
+  "findings": [
+    {"id": "F001", "category": "desperdicio", "severity": "media", "account_id": "111122223333", "region": "us-east-1",
+     "resource_id": "vol-0abc12345678def90", "title": "Volumen EBS sin adjuntar",
+     "detail": "El volumen vol-0abc12345678def90 de Acme Prod cuesta $12.34/mes sin uso.", "monthly_usd": 12.34, "source": "regla"},
+    {"id": "F002", "category": "riesgo", "severity": "alta", "account_id": "444455556666", "region": "us-east-2",
+     "resource_id": "sg-0fedcba987654321a", "title": "SG abierto a 0.0.0.0/0",
+     "detail": "sg-0fedcba987654321a permite 22/tcp desde 0.0.0.0/0 y desde 52.94.10.20/32. Contacto: seguridad@acmepay.io", "monthly_usd": 0, "source": "regla"}
+  ]
+}

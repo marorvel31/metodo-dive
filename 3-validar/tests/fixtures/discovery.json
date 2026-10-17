@@ -1,0 +1,41 @@
+{
+  "generated_at": "2026-09-26T15:00:00Z",
+  "period": {"start": "2026-03-01", "end": "2026-09-01", "months": 6},
+  "threshold_usd": 0.01,
+  "accounts": {
+    "111111111111": {
+      "name": "Produccion",
+      "total_usd": 1067.0,
+      "regions": {
+        "us-east-1": {
+          "total_usd": 1000.0,
+          "services": {
+            "Amazon Elastic Compute Cloud - Compute": 540.0,
+            "EC2 - Other": 120.0,
+            "Amazon Relational Database Service": 300.0,
+            "Amazon Simple Storage Service": 30.0,
+            "Amazon OpenSearch Service": 10.0
+          },
+          "monthly_usd": {}
+        },
+        "eu-west-1": {
+          "total_usd": 12.0,
+          "services": {"AWS Key Management Service": 6.0, "Amazon Simple Email Service": 6.0},
+          "monthly_usd": {}
+        },
+        "global": {"total_usd": 55.0, "services": {"Amazon Route 53": 5.0, "Tax": 50.0}, "monthly_usd": {}}
+      }
+    },
+    "222222222222": {
+      "name": "Desarrollo",
+      "total_usd": 90.0,
+      "regions": {
+        "us-east-1": {
+          "total_usd": 90.0,
+          "services": {"Amazon Elastic Compute Cloud - Compute": 60.0, "EC2 - Other": 30.0},
+          "monthly_usd": {}
+        }
+      }
+    }
+  }
+}
