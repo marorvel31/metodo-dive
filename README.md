@@ -22,7 +22,7 @@ Inventario de una AWS Organization con muchas cuentas, en una tarde, con IA como
 
 ## Requisitos
 
-- Python 3.10+ y [uv](https://github.com/astral-sh/uv) (o pip)
+- Python 3.11+ (el anonimizador usa cuantificadores posesivos de `re`) y [uv](https://github.com/astral-sh/uv) (o pip)
 - AWS CLI v2 con acceso a la cuenta management
 - [aws-doctor](https://github.com/elC0mpa/aws-doctor) (opcional, fase V)
 
@@ -34,6 +34,10 @@ cp dive.config.example.yaml dive.config.yaml   # y ajusta management_profile
 ## Fase 0 · Preparar el acceso
 
 El rol de escaneo es `ViewOnlyAccess` + [una policy mínima](setup/readonly-policy.json) con exactamente lo que piden los colectores y aws-doctor. `ViewOnlyAccess` sola se queda corta (no trae Cost Explorer ni Transit Gateway), y `ReadOnlyAccess` es demasiado (incluye `s3:GetObject`: leer datos).
+
+La policy también **niega explícitamente** lo que sí lee contenido aunque parezca metadato: valores de API keys de API Gateway, variables de entorno de task definitions de ECS y de Lambda (`GetFunctionConfiguration`), UserData (launch templates, launch configurations, spot), secretos, parámetros SSM, objetos S3, eventos de logs y outputs de CloudFormation. Esos `Deny` siguen valiendo aunque AWS amplíe `ViewOnlyAccess` en el futuro. Riesgo residual que no se puede cerrar sin romper el inventario: `lambda:ListFunctions`/`ListVersionsByFunction` devuelven las variables de entorno de Lambda, `glue:GetJobs` los `DefaultArguments` de los jobs y los stages de API Gateway sus stage variables. Los colectores descartan esos campos, pero quien tenga el rol puede verlos: no guardes secretos ahí.
+
+Opcional: el chequeo de memoria de Lambda de aws-doctor usa Logs Insights (`logs:StartQuery`, `logs:GetQueryResults`), que lee el **contenido** de los logs de las funciones. No viene en la policy; agrégalo solo si aceptas ese acceso.
 
 Elige según lo que tenga tu organización:
 

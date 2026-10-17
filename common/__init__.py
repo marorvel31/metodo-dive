@@ -2,12 +2,18 @@
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
 
 RAIZ = Path(__file__).resolve().parent.parent
+
+# Todo lo que escriben las fases (JSON, salidas crudas de aws-doctor, reporte) es el reconocimiento
+# completo de la organización: archivos y carpetas nuevos solo para el usuario. Todas las fases
+# importan este módulo, así que vale aunque se pasen rutas explícitas (--inventory, --discovery...).
+os.umask(0o077)
 
 # Servicios de gobierno que se activan en todas las regiones (trail multi-región, Config, Security Hub...).
 # Una región cuyo único costo viene de estos no es "sorpresa": no hay recursos olvidados ahí.
@@ -38,8 +44,31 @@ def ahora():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+_RE_SESION = re.compile(r"(assumed-role/[^/\s]+/)[^\s:\"']+")
+_RE_USUARIO = re.compile(r"(:user/)[^\s:\"']+")
+_RE_EMAIL = re.compile(r"[\w.+-]+(@|%40)[\w-]+(\.[\w-]+)+")
+
+
+def redactar(texto, largo=300):
+    """Quita la sesión, el usuario IAM y los emails del operador (los AccessDenied los traen), en una
+    sola línea y recortado. Se redacta antes de recortar para no dejar medio email."""
+    texto = _RE_SESION.sub(r"\1<sesion>", str(texto))
+    texto = _RE_USUARIO.sub(r"\1<usuario>", texto)
+    texto = _RE_EMAIL.sub("<email>", texto)
+    return " ".join(texto.split())[:largo]
+
+
+def error_corto(e, largo=300):
+    """'Tipo: mensaje' de una excepción, redactado (ver redactar)."""
+    return redactar(f"{type(e).__name__}: {e}", largo)
+
+
 def carpeta_salida(cfg, fecha=None):
-    """salida/<YYYY-MM-DD>/ relativa a la raíz del repo, salvo que output_dir sea absoluta."""
+    """salida/<YYYY-MM-DD>/ relativa a la raíz del repo, salvo que output_dir sea absoluta.
+
+    Las salidas son el reconocimiento completo de la organización: solo el usuario puede leerlas
+    (ver el umask al importar este módulo).
+    """
     base = Path(cfg["output_dir"])
     if not base.is_absolute():
         base = RAIZ / base

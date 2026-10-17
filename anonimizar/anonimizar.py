@@ -23,6 +23,7 @@ import hmac
 import ipaddress
 import json
 import math
+import os
 import re
 import secrets
 import shutil
@@ -888,6 +889,7 @@ def main(argv=None):
     ap.add_argument("--ocultar-privadas", action="store_true", help="también reemplaza IPs/CIDRs privados")
     ap.add_argument("--verificar", action="store_true", help="solo verifica una carpeta ya anonimizada")
     args = ap.parse_args(argv)
+    os.umask(0o077)  # la copia anonimizada y el mapeo solo los lee el usuario
 
     cfg = cargar_anon_config(args.config)
     terminos = terminos_de(cfg, args.termino)
@@ -960,6 +962,7 @@ def main(argv=None):
                 salida.write_text(resultado)
 
     ruta_mapeo.write_text(json.dumps(mapeo.a_dict(), indent=2, ensure_ascii=False) + "\n")
+    ruta_mapeo.chmod(0o600)  # el mapeo (con la sal) es la llave para des-anonimizar
     print(f"Anonimizado: {len(archivos) - len(omitidos)} archivo(s) → {destino}")
     print(f"Mapeo: {ruta_mapeo}")
     for rel in omitidos:
