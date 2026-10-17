@@ -200,6 +200,10 @@ td.si{color:var(--ok)}td.no{color:var(--coral-claro)}
   letter-spacing:.08em;text-transform:uppercase;color:var(--texto);text-align:center;white-space:nowrap;
   padding:3px 6px;border-radius:4px;opacity:.9;transition:opacity 400ms}
 .hud .z small{display:block;font:600 clamp(11px,.92vw,14px)/1.1 var(--mono);letter-spacing:0;opacity:.85;text-transform:none}
+/* el profundímetro también navega: clic en una etiqueta o en cualquier punto del tubo salta a esa zona */
+.hud .tubo{cursor:pointer}
+.hud .z{background:transparent;border:0;cursor:pointer}
+.hud .z.hover,.hud .z:focus-visible{opacity:1;box-shadow:0 0 0 2px var(--aqua);outline:none}
 .hud .z.aqui{opacity:1;background:var(--aqua);color:var(--sobre-acento)}
 
 /* pie */
@@ -362,7 +366,7 @@ pre.grande{font-size:30px;line-height:1.5}
   </div>
 </div>
 
-<aside class="hud" aria-hidden="true">
+<nav class="hud" aria-label="Profundímetro: ir a una sección">
   <div class="tubo">
     <svg viewBox="0 0 400 900" preserveAspectRatio="none">
       <line class="nivel" x1="0" y1="54.6" x2="400" y2="54.6"/>
@@ -372,7 +376,7 @@ pre.grande{font-size:30px;line-height:1.5}
     <div class="ventana" id="ventana"></div>
     <div class="etqs" id="etqs"></div>
   </div>
-</aside>
+</nav>
 
 <main class="deck" id="deck">
 <canvas id="burbujas" aria-hidden="true"></canvas>
@@ -1077,8 +1081,21 @@ python anonimizar/anonimizar.py salida/&lt;fecha&gt;</pre>
     {n:'Esquematizar',m:'−200 m'},{n:'Seguridad',m:'−300 m'},{n:'Código',m:'−400 m'},{n:'En casa',m:'−500 m'}
   ];
   const etqs=document.getElementById('etqs');
-  ZONAS.forEach((z,k)=>{const d=document.createElement('div');d.className='z';d.dataset.z=k;
+  ZONAS.forEach((z,k)=>{const d=document.createElement('button');d.type='button';d.className='z';d.dataset.z=k;
+    d.setAttribute('aria-label','Ir a '+z.n);
     d.innerHTML=z.n+'<small>'+z.m+'</small>';d.style.top=((k+.5)/9*100)+'%';etqs.appendChild(d)});
+  // Cada zona ocupa 1/9 del tubo; la franja final (bajo "En casa") cuenta como la última zona.
+  const tubo=document.querySelector('.hud .tubo');
+  function zonaEn(y){const r=tubo.getBoundingClientRect();return Math.min(ZONAS.length-1,Math.max(0,Math.floor((y-r.top)/r.height*9)))}
+  function marcar(k){etqs.querySelectorAll('.z').forEach(m=>m.classList.toggle('hover',+m.dataset.z===k))}
+  function irZona(k){const n=slides.findIndex(s=>+s.dataset.zona===k);if(n>=0)ir(n)}
+  tubo.addEventListener('mousemove',e=>marcar(zonaEn(e.clientY)));
+  tubo.addEventListener('mouseleave',()=>marcar(-1));
+  tubo.addEventListener('click',e=>{
+    const b=e.target.closest('.z');irZona(b?+b.dataset.z:zonaEn(e.clientY));
+    // sin foco en el botón, Espacio y Enter siguen pasando de slide
+    if(document.activeElement)document.activeElement.blur();
+  });
   const columna=document.getElementById('columna'),ventana=document.getElementById('ventana');
   let i=0, t0=Date.now(), zonaActual=0;
 
