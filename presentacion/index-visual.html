@@ -401,6 +401,11 @@ p,li{font-size:31px}.lead{font-size:42px}
 .chip{font-size:30px}
 .corte .nv{font-size:30px}
 .marca-agua .sep{width:2px;height:30px;background:var(--tenue);opacity:.6}
+/* numeración visible: número actual grande en morado de marca, total más tenue */
+.pie .num{font:400 34px/1 var(--display);letter-spacing:.04em;color:var(--tenue)}
+.pie .num b{font-weight:400;color:var(--dl-morado)}
+:root[data-z="2"] .pie .num b,:root[data-z="3"] .pie .num b,:root[data-z="4"] .pie .num b,
+:root[data-z="5"] .pie .num b,:root[data-z="6"] .pie .num b,:root[data-z="7"] .pie .num b{color:var(--dl-lima)}
 .v .ic-p{fill:none;stroke:var(--texto);stroke-width:4;stroke-linecap:round}
 .leyenda-fases{display:flex;flex-wrap:wrap;gap:12px 30px;font-size:25px;color:var(--suave)}
 .leyenda-fases b{font-family:var(--display);color:var(--texto);margin-right:6px}
@@ -1195,7 +1200,7 @@ python anonimizar/anonimizar.py salida/&lt;fecha&gt;</pre>
     etqs.querySelectorAll('.z').forEach(m=>m.classList.toggle('aqui',+m.dataset.z===tramo));
     zonaActual=z;
     document.getElementById('barra').style.width=((n+1)/slides.length*100)+'%';
-    document.getElementById('pie-num').textContent=String(n+1).padStart(2,'0')+' / '+slides.length;
+    document.getElementById('pie-num').innerHTML='<b>'+String(n+1).padStart(2,'0')+'</b> / '+slides.length;
     document.getElementById('pie-titulo').textContent=n<=1?'':slides[n].dataset.titulo;
     document.documentElement.toggleAttribute('data-sinmarca',!!slides[n].querySelector('.marcas,.evento-img'));
     document.getElementById('np-num').textContent=(n+1)+' / '+slides.length+' · '+slides[n].dataset.titulo;
