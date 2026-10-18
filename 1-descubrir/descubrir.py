@@ -8,7 +8,8 @@ Llamadas a Cost Explorer (cada una cuesta USD 0.01), sin importar cuántas cuent
   R llamadas  GroupBy LINKED_ACCOUNT + SERVICE, Filter REGION = r (una por región con costo)
   R llamadas  GroupBy LINKED_ACCOUNT + USAGE_TYPE, Filter REGION = r (Cost Explorer admite solo 2 GroupBy)
   1 llamada   GroupBy LINKED_ACCOUNT + USAGE_TYPE de los servicios globales (CloudFront)
-  Total = 2 + 2R, más una llamada extra por cada página (NextPageToken). R suele ser 3-8.
+  1 llamada   GroupBy LINKED_ACCOUNT + RECORD_TYPE de lo que no es uso (impuestos, Savings Plans, RIs, créditos)
+  Total = 3 + 2R, más una llamada extra por cada página (NextPageToken). R suele ser 3-8.
   El número de cuentas solo influye en la paginación, no en el número de llamadas base.
 
 Uso: python 1-descubrir/descubrir.py [--config dive.config.yaml] [--meses 6]
@@ -129,10 +130,12 @@ def descubrir(ce, cuentas, cfg, hoy=None):
 
     # 1) Regiones con costo (valor crudo de CE, para poder filtrar por él después).
     por_region = defaultdict(float)
-    for _, cuenta, region, usd in consultar(ce, inicio, fin, ["LINKED_ACCOUNT", "REGION"],
-                                            filtro_base(incluir), contador):
+    uso_total = defaultdict(lambda: defaultdict(float))  # cuenta → mes → usd, sin umbral (para la factura)
+    for mes, cuenta, region, usd in consultar(ce, inicio, fin, ["LINKED_ACCOUNT", "REGION"],
+                                              filtro_base(incluir), contador):
         if cuenta in cuentas:
             por_region[region] += usd
+            uso_total[cuenta][mes] += usd
     regiones_crudas = sorted(r for r, usd in por_region.items() if usd >= umbral)
 
     # 2) Servicios por cuenta dentro de cada región. costos[cuenta][region][servicio][mes] = usd
@@ -167,6 +170,21 @@ def descubrir(ce, cuentas, cfg, hoy=None):
         for mes, cuenta, tipo, usd in filas:
             if cuenta in cuentas:
                 usos[cuenta][region][tipo][mes] += usd
+
+    # 2c) Cargos que no son uso (impuestos, cuotas de Savings Plans y RIs, su descuento, créditos): no tienen
+    #     recurso detrás y quedan fuera del cruce con el inventario, pero son parte de la factura real.
+    cargos = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
+    condiciones = [{"Not": {"Dimensions": {"Key": "RECORD_TYPE", "Values": RECORD_TYPES_USO}}}]
+    if incluir:
+        condiciones.append({"Dimensions": {"Key": "LINKED_ACCOUNT", "Values": sorted(incluir)}})
+    try:
+        for mes, cuenta, tipo, usd in consultar(ce, inicio, fin, ["LINKED_ACCOUNT", "RECORD_TYPE"],
+                                                {"And": condiciones} if len(condiciones) > 1 else condiciones[0],
+                                                contador):
+            if cuenta in cuentas and usd:
+                cargos[cuenta][tipo][mes] += usd
+    except Exception as e:  # noqa: BLE001 — sin cargos el discovery sigue siendo válido
+        errores.append({"region": None, "query": "record_type", "error": error_corto(e)})
 
     # 3) Umbral por servicio (sobre el total del periodo) y forma del CONTRATO.
     salida_cuentas = {}
@@ -208,6 +226,12 @@ def descubrir(ce, cuentas, cfg, hoy=None):
         "period": {"start": inicio.isoformat(), "end": fin.isoformat(), "months": meses},
         "threshold_usd": umbral,
         "accounts": salida_cuentas,
+        "charges_monthly_usd": {c: {t: {m: round(v, 2) for m, v in sorted(meses.items())} for t, meses in tipos.items()}
+                                for c, tipos in sorted(cargos.items())},
+        # Uso de cada cuenta por mes SIN el umbral de threshold_usd: con los cargos da la factura (los
+        # services descartan servicios y regiones chicos; los cargos, como el descuento del SP, no).
+        "usage_total_monthly_usd": {c: {m: round(v, 2) for m, v in sorted(por_mes.items())}
+                                    for c, por_mes in sorted(uso_total.items())},
         "errors": errores,
     }
     return discovery, contador["llamadas"], errores

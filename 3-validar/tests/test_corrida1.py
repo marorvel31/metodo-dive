@@ -56,25 +56,33 @@ class CEFalso:
     """get_cost_and_usage mínimo: filtros REGION / SERVICE (incl. Not) y GroupBy de 2 claves como máximo."""
 
     def __init__(self, filas):
-        self.filas = filas  # [(cuenta, region, servicio, usage_type, usd)]
+        # [(cuenta, region, servicio, usage_type, usd[, record_type])]; sin record_type = "Usage"
+        self.filas = [f if len(f) == 6 else (*f, "Usage") for f in filas]
         self.llamadas = []
 
     def get_cost_and_usage(self, **p):
         claves = [g["Key"] for g in p["GroupBy"]]
         assert len(claves) <= 2, "Cost Explorer admite como máximo 2 GroupBy"
         self.llamadas.append(claves)
-        region, excluidos, solo = None, set(), None
-        for c in p["Filter"]["And"]:
-            if c.get("Dimensions", {}).get("Key") == "REGION":
-                region = c["Dimensions"]["Values"][0]
-            elif c.get("Dimensions", {}).get("Key") == "SERVICE":
-                solo = set(c["Dimensions"]["Values"])
-            elif c.get("Not", {}).get("Dimensions", {}).get("Key") == "SERVICE":
-                excluidos = set(c["Not"]["Dimensions"]["Values"])
-        dim = {"LINKED_ACCOUNT": 0, "REGION": 1, "SERVICE": 2, "USAGE_TYPE": 3}
+        region, excluidos, solo, rt_si, rt_no = None, set(), None, None, set()
+        for c in p["Filter"].get("And", [p["Filter"]]):   # And necesita 2+ operandos: una sola condición va suelta
+            d, n = c.get("Dimensions", {}), c.get("Not", {}).get("Dimensions", {})
+            if d.get("Key") == "REGION":
+                region = d["Values"][0]
+            elif d.get("Key") == "SERVICE":
+                solo = set(d["Values"])
+            elif d.get("Key") == "RECORD_TYPE":
+                rt_si = set(d["Values"])
+            elif n.get("Key") == "SERVICE":
+                excluidos = set(n["Values"])
+            elif n.get("Key") == "RECORD_TYPE":
+                rt_no = set(n["Values"])
+        dim = {"LINKED_ACCOUNT": 0, "REGION": 1, "SERVICE": 2, "USAGE_TYPE": 3, "RECORD_TYPE": 5}
         grupos = {}
         for fila in self.filas:
             if (region and fila[1] != region) or fila[2] in excluidos or (solo and fila[2] not in solo):
+                continue
+            if (rt_si is not None and fila[5] not in rt_si) or fila[5] in rt_no:
                 continue
             k = tuple(fila[dim[c]] for c in claves)
             grupos[k] = grupos.get(k, 0.0) + fila[4]
@@ -501,3 +509,20 @@ def test_config_exige_cuentas_como_texto(tmp_path):
     bueno = tmp_path / "bueno.yaml"
     bueno.write_text('exclude_accounts: ["012345670123"]\n')
     assert cargar_config(bueno)["exclude_accounts"] == ["012345670123"]
+
+
+def test_cargos_fuera_del_uso_impuestos_y_savings_plans():
+    ce = CEFalso([(CUENTA, "eu-west-1", "Amazon EC2", "EU-BoxUsage", 100.0),
+                  (CUENTA, "eu-west-1", "Amazon EC2", "EU-BoxUsage", 40.0, "SavingsPlanCoveredUsage"),
+                  (CUENTA, "eu-west-1", "Amazon EC2", "EU-BoxUsage", -40.0, "SavingsPlanNegation"),
+                  (CUENTA, "global", "Savings Plans for AWS Compute usage", "x", 30.0, "SavingsPlanRecurringFee"),
+                  (CUENTA, "global", "Tax", "x", 23.0, "Tax")])
+    cfg = {"billing_months": 1, "threshold_usd": 0.01, "include_accounts": []}
+    disc, _, errores = descubrir.descubrir(ce, {CUENTA: "Prod"}, cfg, hoy=dt.date(2026, 10, 17))
+    assert errores == []
+    assert disc["charges_monthly_usd"][CUENTA] == {"SavingsPlanNegation": {"2026-09": -40.0},
+                                                   "SavingsPlanRecurringFee": {"2026-09": 30.0},
+                                                   "Tax": {"2026-09": 23.0}}
+    uso = sum(disc["accounts"][CUENTA]["regions"]["eu-west-1"]["services"].values())
+    assert uso == 140.0                                     # uso a precio de lista (incluye lo cubierto por el SP)
+    assert uso + sum(v["2026-09"] for v in disc["charges_monthly_usd"][CUENTA].values()) == 153.0  # factura real
