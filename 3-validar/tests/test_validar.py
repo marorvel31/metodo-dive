@@ -188,11 +188,13 @@ def test_validar_completo(tmp_path, monkeypatch):
         return doctor.items_a_findings({("111111111111", "us-east-1"): items}), []
 
     monkeypatch.setattr(doctor, "ejecutar", falso_doctor)
+    monkeypatch.setattr(doctor, "version", lambda: "aws-doctor version 0.0-test")  # sin ejecutar el binario
     findings, _ = validar.validar(CFG, cargar("discovery.json"), cargar("inventory.json"), tmp_path)
 
     datos = json.loads((tmp_path / "findings.json").read_text())
     assert set(datos) >= {"generated_at", "findings"}
     claves = {"id", "category", "severity", "account_id", "region", "resource_id", "title", "detail",
+              "rule_id", "issue_id", "fingerprint", "price_source", "is_saving",
               "monthly_usd", "source"}
     assert all(set(f) == claves for f in datos["findings"])
     assert {f["source"] for f in findings} == {"aws-doctor", "cruce-billing", "regla"}

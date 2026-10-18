@@ -6,7 +6,7 @@ en paralelo. Escribe inventory.json en la misma carpeta.
 Si existe cobertura.json (fase 3) en la misma carpeta, suma sus `tareas_extra`: colectores en
 cuentas/regiones donde el oráculo vio recursos que el billing no mostró (free tier).
 
-Uso: python 2-inventariar/inventariar.py [--discovery salida/<fecha>/discovery.json] [--solo ec2,rds] [--sin-cobertura]
+Uso: python 2-inventariar/inventariar.py [--discovery salida/<corrida>/discovery.json] [--solo ec2,rds] [--sin-cobertura]
 """
 
 import argparse
@@ -23,7 +23,7 @@ sys.path.insert(0, str(AQUI))
 
 import boto3  # noqa: E402
 
-from common import ahora, cargar_config, carpeta_salida, error_corto, escribir_json, leer_json  # noqa: E402
+from common import ahora, cargar_config, corrida_actual, error_corto, escribir_json, heredar_run, leer_json  # noqa: E402
 from common.aws import regiones_habilitadas, sesion_cuenta, sesion_management  # noqa: E402
 
 import colectores  # noqa: E402
@@ -124,8 +124,11 @@ def main():
     args = parser.parse_args()
 
     cfg = cargar_config(args.config)
-    ruta_disc = Path(args.discovery) if args.discovery else carpeta_salida(cfg) / "discovery.json"
+    ruta_disc = Path(args.discovery) if args.discovery else corrida_actual(cfg) / "discovery.json"
+    if not ruta_disc.exists():
+        raise SystemExit(f"No existe {ruta_disc}. Corre primero la fase 1 o pasa --discovery.")
     discovery = leer_json(ruta_disc)
+    heredar_run(discovery, cfg, "inventariar", {})  # aborta antes de escanear si es de otra organización
     salida = ruta_disc.parent
 
     mods = cargar_colectores(set(args.solo.split(",")) if args.solo else None)
@@ -169,6 +172,7 @@ def main():
                 print(f"  {i}/{len(futuros)} tareas · {len(recursos)} recursos · {len(errores)} errores")
 
     inventario = {
+        "run": heredar_run(discovery, cfg, "inventariar", {"solo": args.solo, "sin_cobertura": args.sin_cobertura}),
         "generated_at": ahora(),
         "accounts": {a: {"name": discovery["accounts"][a]["name"],
                          **({"enabled_regions": habilitadas[a]} if a in habilitadas else {})}

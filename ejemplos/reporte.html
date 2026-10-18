@@ -382,7 +382,8 @@ function hallazgos(){
   // Igual que findings.md: solo desperdicio + costo. Las regiones sorpresa o lo "no inventariado" son
   // gasto existente, no ahorro.
   var mensual = lista.reduce(function(s, f){
-    return s + ((f.category === "desperdicio" || f.category === "costo") ? (Number(f.monthly_usd) || 0) : 0);
+    var ahorro = (f.is_saving != null) ? f.is_saving : (f.category === "desperdicio" || f.category === "costo");
+    return s + (ahorro ? (Number(f.monthly_usd) || 0) : 0);
   }, 0);
   $("h-meta").textContent = lista.length + " hallazgos" +
     (mensual ? " · ahorro potencial estimado (desperdicio + costo): " + usd(mensual) + "/mes" : "");

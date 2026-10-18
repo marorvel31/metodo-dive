@@ -65,10 +65,10 @@ export DIVE_CONFIG=dive.config.yaml            # o la ruta a la config de cada o
 .venv/bin/python 3-validar/validar.py           # ~20 s (usa --sin-doctor si no tienes aws-doctor)
 .venv/bin/python 4-esquematizar/esquematizar.py
 .venv/bin/python 4-esquematizar/reporte.py
-.venv/bin/python anonimizar/anonimizar.py salida/<fecha>   # sale ≠ 0 si detecta cualquier fuga; exige anonymize.replace_terms
+.venv/bin/python anonimizar/anonimizar.py salida/<corrida>   # sale ≠ 0 si detecta cualquier fuga; exige anonymize.replace_terms
 ```
 
-Las salidas quedan en `salida/<fecha>/` (ignorada por git). Si trabajas para un cliente, apunta `output_dir` fuera del repo.
+Las salidas quedan en `salida/<corrida>/` (ignorada por git), una carpeta por corrida (`2026-10-18T101500Z`, UTC). La fase 1 la crea y la anota en `salida/ULTIMA`; las demás fases usan esa. Si trabajas para un cliente, apunta `output_dir` fuera del repo, y pon `org_alias` en el config de cada organización: una fase aborta si la corrida es de otra.
 
 Para ver el resultado sin correr nada, abre `ejemplos/`: una organización sintética de 4 cuentas con su `reporte.html` (funciona offline) y los diagramas `.drawio`.
 

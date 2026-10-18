@@ -1,6 +1,6 @@
 """Fase 4 · Esquematizar: inventory.json (+ findings.json, discovery.json) → diagramas draw.io.
 
-Genera en salida/<fecha>/diagramas/:
+Genera en salida/<corrida>/diagramas/:
   - 00-organizacion.drawio: cuentas como contenedores (recursos por servicio, costo) y
     conexiones entre cuentas (Transit Gateway, VPC peering, VPN).
   - <account_id>-<nombre>.drawio: una página por región con VPC → subredes (pública/privada,
@@ -10,7 +10,7 @@ El layout es una grilla calculada: no hay posiciones aleatorias ni dependencias 
 que el mismo inventario produce exactamente el mismo XML.
 
 Uso:
-  python 4-esquematizar/esquematizar.py                        # usa salida/<hoy>/inventory.json
+  python 4-esquematizar/esquematizar.py                        # usa salida/<última corrida>/inventory.json
   python 4-esquematizar/esquematizar.py --inventory salida/2026-09-26/inventory.json
   python 4-esquematizar/esquematizar.py --inventory x.json --salida /tmp/out --umbral 10
 
@@ -1089,7 +1089,7 @@ def opcional(ruta):
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--config")
-    p.add_argument("--inventory", help="Ruta a inventory.json (por defecto salida/<hoy>/inventory.json)")
+    p.add_argument("--inventory", help="Ruta a inventory.json (por defecto salida/<última corrida>/inventory.json)")
     p.add_argument("--findings", help="Ruta a findings.json (por defecto, junto a inventory.json)")
     p.add_argument("--discovery", help="Ruta a discovery.json (por defecto, junto a inventory.json)")
     p.add_argument("--salida", help="Carpeta donde escribir diagramas/ (por defecto, la de inventory.json)")
@@ -1099,8 +1099,8 @@ def main():
     if a.inventory:
         inv_path = Path(a.inventory)
     else:
-        from common import cargar_config, carpeta_salida
-        inv_path = carpeta_salida(cargar_config(a.config)) / "inventory.json"
+        from common import cargar_config, corrida_actual
+        inv_path = corrida_actual(cargar_config(a.config)) / "inventory.json"
     if not inv_path.exists():
         raise SystemExit(f"No existe {inv_path}. Corre primero la fase 2 o pasa --inventory.")
     base = Path(a.salida) if a.salida else inv_path.parent

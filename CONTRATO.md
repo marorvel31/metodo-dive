@@ -1,6 +1,21 @@
 # Contrato entre fases
 
-Cada fase lee el archivo de la anterior y escribe el suyo en `salida/<fecha>/`. Nada se parsea desde texto de consola.
+Cada fase lee el archivo de la anterior y escribe el suyo en `salida/<corrida>/`. Nada se parsea desde texto de consola.
+
+**Corrida.** La fase 1 crea `salida/<run_id>/`, con `run_id` = `YYYY-MM-DDTHHMMSSZ` (UTC), y escribe su `run_id` en `salida/ULTIMA`. Las fases 2-4, sin ruta explícita, trabajan sobre la corrida de `ULTIMA` (si no existe, sobre `salida/<fecha de hoy>/`, el formato anterior). Dos corridas el mismo día no se pisan.
+
+**Bloque `run`** (al inicio de `discovery.json`, `inventory.json` y `findings.json`): identifica la corrida y con qué se hizo. Las fases 2 y 3 lo copian de la anterior y agregan sus opciones en `flags`. Si `org_alias` del config no coincide con el de la corrida, la fase aborta.
+
+```json
+"run": {
+  "run_id": "2026-10-18T101500Z", "dive_version": "a1b2c3d-dirty",
+  "organization_id": "o-a1b2c3d4e5", "management_account_id": "123456789012", "org_alias": "mi-org",
+  "currency": "USD",
+  "config": {"billing_months": 6, "threshold_usd": 0.01, "include_accounts": [], "exclude_accounts": [], "access_mode": "sso"},
+  "flags": {"inventariar": {"solo": null, "sin_cobertura": false},
+            "validar": {"sin_doctor": false, "aws_doctor_version": "aws-doctor version 2.21.1"}}
+}
+```
 
 ```
 setup/  →  1-descubrir → discovery.json
@@ -104,6 +119,14 @@ def collect(session, region, account_id):
 - Construir cada recurso con `common.recurso(...)` para que todos tengan las mismas claves.
 
 ## findings.json (fase 3)
+
+Campos v2 (aditivos) de cada finding:
+
+- `rule_id`: de dónde salió: `regla.<nombre>`, `aws-doctor.<categoría>` o `cruce.<tipo>`.
+- `issue_id`: el problema canónico. Fuentes distintas que detectan lo mismo comparten `issue_id` (ej. `regla.ebs_sin_adjuntar` y `aws-doctor.unused_ebs_volumes` → `ebs.unattached`).
+- `fingerprint`: `sha256(issue_id|account_id|region|resource_id|discriminador)[:16]`. Identidad estable entre corridas: no cambia con el título, el costo, el orden ni con correr sin aws-doctor. Es la clave de deduplicación (un finding por fingerprint) y la que usa un historial. El `id` (F001…) es solo para leer y cambia entre corridas.
+- `price_source`: `ce_actual` (Cost Explorer), `aws_doctor` (estimación de aws-doctor), `static_estimate` (precio de referencia de una regla) o `null` si no hay `monthly_usd`.
+- `is_saving`: `true` para `desperdicio` y `costo`. Los totales de `findings.md` y `reporte.html` suman solo estos.
 
 ```json
 {

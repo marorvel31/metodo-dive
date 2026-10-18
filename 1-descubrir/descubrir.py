@@ -23,7 +23,8 @@ from pathlib import Path
 AQUI = Path(__file__).resolve().parent
 sys.path.insert(0, str(AQUI.parent))
 
-from common import SERVICIOS_GOBIERNO, ahora, cargar_config, carpeta_salida, error_corto, escribir_json  # noqa: E402
+from common import (SERVICIOS_GOBIERNO, ahora, cargar_config, error_corto, escribir_json,  # noqa: E402
+                    marcar_ultima, nueva_corrida, run_de)
 from common.aws import client, listar_cuentas, sesion_management  # noqa: E402
 
 # Solo cuenta el USO de recursos. Se dejan fuera impuestos, créditos y sobre todo las cuotas de
@@ -110,6 +111,7 @@ def consultar(ce, inicio, fin, group_by, filtro, contador):
         for resultado in resp.get("ResultsByTime", []):
             mes = resultado["TimePeriod"]["Start"][:7]
             for g in resultado.get("Groups", []):
+                contador.setdefault("monedas", set()).add(g["Metrics"]["UnblendedCost"].get("Unit") or "USD")
                 usd = float(g["Metrics"]["UnblendedCost"]["Amount"])
                 filas.append((mes, g["Keys"][0], g["Keys"][1], usd))
         token = resp.get("NextPageToken")
@@ -197,7 +199,11 @@ def descubrir(ce, cuentas, cfg, hoy=None):
                 "regions": regiones,
             }
 
+    monedas = sorted(contador.get("monedas") or {"USD"})
+    if len(monedas) > 1:  # todo se suma como si fuera una sola moneda: que se vea, y sin elegir una al azar
+        errores.append({"region": None, "error": f"Cost Explorer devolvió varias monedas: {', '.join(monedas)}"})
     discovery = {
+        "currency": monedas[0] if len(monedas) == 1 else None,
         "generated_at": ahora(),
         "period": {"start": inicio.isoformat(), "end": fin.isoformat(), "months": meses},
         "threshold_usd": umbral,
@@ -268,12 +274,17 @@ def main():
         cfg["billing_months"] = args.meses
 
     session = sesion_management(cfg)
+    org = client(session, "organizations", "us-east-1").describe_organization()["Organization"]
     cuentas = listar_cuentas(cfg, session)
     print(f"{len(cuentas)} cuentas ACTIVE después de include/exclude")
     ce = client(session, "ce", "us-east-1")
 
     discovery, llamadas, errores = descubrir(ce, cuentas, cfg)
-    ruta = escribir_json(carpeta_salida(cfg) / "discovery.json", discovery)
+    carpeta = nueva_corrida(cfg)
+    discovery = {"run": run_de(carpeta, org["Id"], org["MasterAccountId"], cfg, discovery.pop("currency")),
+                 **discovery}
+    ruta = escribir_json(carpeta / "discovery.json", discovery)
+    marcar_ultima(carpeta)
     imprimir_resumen(discovery, llamadas, errores)
     print(f"\n→ {ruta}")
 

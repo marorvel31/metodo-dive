@@ -5,7 +5,7 @@ Pestañas: resumen (cuentas, regiones, recursos, costo del periodo), recursos (f
 cuenta/región/servicio/tipo + buscador), hallazgos por severidad y errores de escaneo.
 
 Uso:
-  python 4-esquematizar/reporte.py                          # usa salida/<hoy>/inventory.json
+  python 4-esquematizar/reporte.py                          # usa salida/<última corrida>/inventory.json
   python 4-esquematizar/reporte.py --inventory salida/2026-09-26/inventory.json [--salida carpeta]
 """
 
@@ -477,7 +477,8 @@ function hallazgos(){
   // Igual que findings.md: solo desperdicio + costo. Las regiones sorpresa o lo "no inventariado" son
   // gasto existente, no ahorro.
   var mensual = lista.reduce(function(s, f){
-    return s + ((f.category === "desperdicio" || f.category === "costo") ? (Number(f.monthly_usd) || 0) : 0);
+    var ahorro = (f.is_saving != null) ? f.is_saving : (f.category === "desperdicio" || f.category === "costo");
+    return s + (ahorro ? (Number(f.monthly_usd) || 0) : 0);
   }, 0);
   $("h-meta").textContent = lista.length + " hallazgos" +
     (mensual ? " · ahorro potencial estimado (desperdicio + costo): " + usd(mensual) + "/mes" : "");
@@ -517,7 +518,7 @@ def generar(inventory, findings=None, discovery=None, ruta=None, diagramas=None)
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--config")
-    p.add_argument("--inventory", help="Ruta a inventory.json (por defecto salida/<hoy>/inventory.json)")
+    p.add_argument("--inventory", help="Ruta a inventory.json (por defecto salida/<última corrida>/inventory.json)")
     p.add_argument("--findings", help="Ruta a findings.json (por defecto, junto a inventory.json)")
     p.add_argument("--discovery", help="Ruta a discovery.json (por defecto, junto a inventory.json)")
     p.add_argument("--salida", help="Carpeta donde escribir reporte.html (por defecto, la de inventory.json)")
@@ -526,8 +527,8 @@ def main():
     if a.inventory:
         inv_path = Path(a.inventory)
     else:
-        from common import cargar_config, carpeta_salida
-        inv_path = carpeta_salida(cargar_config(a.config)) / "inventory.json"
+        from common import cargar_config, corrida_actual
+        inv_path = corrida_actual(cargar_config(a.config)) / "inventory.json"
     if not inv_path.exists():
         raise SystemExit(f"No existe {inv_path}. Corre primero la fase 2 o pasa --inventory.")
     base = Path(a.salida) if a.salida else inv_path.parent

@@ -126,6 +126,17 @@ def disponible():
     return shutil.which(BINARIO) is not None
 
 
+def version():
+    """Primera línea de `aws-doctor version` (ej. "aws-doctor version 2.21.1"); None si no está o falla."""
+    if not disponible():
+        return None
+    try:
+        r = subprocess.run([BINARIO, "version"], capture_output=True, text=True, timeout=10)
+        return (r.stdout.strip().splitlines() or [None])[0]
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def comando(account_id, region, access_mode):
     cmd = [BINARIO, "waste", "--output", "json", "--region", region]
     if access_mode == "sso":
@@ -289,7 +300,8 @@ def items_a_findings(items_por_cuenta_region):
                 continue
             usd = it["usd"]
             findings.append(hallazgo(conf["cat"], severidad_por_costo(usd, conf["sev"]), account_id, reg, it["id"],
-                                     conf["titulo"], it["info"] or conf["titulo"], usd, FUENTE))
+                                     conf["titulo"], it["info"] or conf["titulo"], usd, FUENTE,
+                                     rule_id=f"{FUENTE}.{it['clave']}"))
 
     for (account_id, reg, clave), grupo in agrupados.items():
         conf = CATEGORIAS[clave]
@@ -299,7 +311,8 @@ def items_a_findings(items_por_cuenta_region):
         extra = f" (+{len(ids) - MAX_EJEMPLOS} más)" if len(ids) > MAX_EJEMPLOS else ""
         findings.append(hallazgo(conf["cat"], severidad_por_costo(usd, conf["sev"]), account_id, reg, None,
                                  f"{conf['titulo']} ({len(ids)})",
-                                 f"{len(ids)} recursos: " + ", ".join(ids[:MAX_EJEMPLOS]) + extra, usd, FUENTE))
+                                 f"{len(ids)} recursos: " + ", ".join(ids[:MAX_EJEMPLOS]) + extra, usd, FUENTE,
+                                 rule_id=f"{FUENTE}.{clave}"))
     return findings
 
 

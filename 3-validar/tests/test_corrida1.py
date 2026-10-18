@@ -207,16 +207,17 @@ def test_doctor_ejecutar_registra_avisos_una_vez(tmp_path, monkeypatch):
 
 # ---------- C2 · deduplicar con región ----------
 
-def _f(cat, region, rid, usd):
+def _f(cat, region, rid, usd, rule=None):
     return {"id": None, "category": cat, "severity": "baja", "account_id": CUENTA, "region": region,
-            "resource_id": rid, "title": cat, "detail": "", "monthly_usd": usd, "source": "regla"}
+            "resource_id": rid, "title": cat, "detail": "", "monthly_usd": usd, "source": "regla",
+            "rule_id": rule or f"regla.{cat}"}
 
 
 def test_deduplicar_usa_region_y_descarta_costo_de_un_desperdicio():
     findings = [_f("desperdicio", "eu-west-1", "vol-1", 10.0), _f("costo", "eu-west-1", "vol-1", 2.0),
                 _f("costo", "us-east-1", "vol-1", 2.0),            # mismo id en otra región: es otro recurso
                 _f("riesgo", "eu-west-1", "vol-1", None),
-                _f("costo", None, None, 1.0), _f("costo", None, None, 1.0)]  # agregados sin id: no se tocan
+                _f("costo", None, None, 1.0, "regla.a"), _f("costo", None, None, 1.0, "regla.b")]  # agregados distintos
     salida = validar.deduplicar(findings)
     assert [(f["category"], f["region"]) for f in salida] == [
         ("desperdicio", "eu-west-1"), ("costo", "us-east-1"), ("riesgo", "eu-west-1"), ("costo", None), ("costo", None)]
@@ -299,6 +300,7 @@ def test_validar_pasa_regiones_habilitadas_al_doctor(tmp_path, monkeypatch):
         return [], []
 
     monkeypatch.setattr(doctor, "ejecutar", falso_doctor)
+    monkeypatch.setattr(doctor, "version", lambda: None)
     disc = {"generated_at": "x", "period": {"start": "2026-09-01", "end": "2026-10-01", "months": 1},
             "threshold_usd": 0.01, "accounts": {CUENTA: {"name": "P", "total_usd": 0, "regions": {}}}}
     inv = {"generated_at": "2026-10-17T00:00:00Z", "resources": [], "scanned": [], "errors": [],
@@ -400,3 +402,102 @@ def test_reporte_tipos_de_uso_del_ultimo_mes():
     assert nat["usd"] == 100.0 and nat["previous_usd"] == 50.0
     assert nat["accounts"] == [{"account_id": "A", "usd": 80.0}, {"account_id": "B", "usd": 20.0}]
     assert reporte.tipos_de_uso({}) == {"month": None, "previous": None, "rows": []}
+
+
+# ---------- Contrato v2 ----------
+
+def test_huella_estable_y_canonica_entre_fuentes():
+    from hallazgos import completar_v2, hallazgo
+    regla = hallazgo("desperdicio", "media", CUENTA, REGION, "vol-1", "Volumen sin adjuntar", "x", 10.0, "regla",
+                     rule_id="regla.ebs_sin_adjuntar")
+    doc = hallazgo("desperdicio", "baja", CUENTA, REGION, "vol-1", "Otro título", "y", 11.5, "aws-doctor",
+                   rule_id="aws-doctor.unused_ebs_volumes")
+    otra_region = hallazgo("desperdicio", "media", CUENTA, "us-east-1", "vol-1", "t", "d", 10.0, "regla",
+                           rule_id="regla.ebs_sin_adjuntar")
+    a, b, c = (completar_v2(dict(f)) for f in (regla, doc, otra_region))
+    assert a["issue_id"] == b["issue_id"] == "ebs.unattached"
+    assert a["fingerprint"] == b["fingerprint"]                  # misma identidad con o sin aws-doctor
+    assert a["fingerprint"] != c["fingerprint"]
+    assert (a["price_source"], b["price_source"]) == ("static_estimate", "aws_doctor") and a["is_saving"]
+
+
+def test_rds_publico_y_sin_cifrar_no_se_pierde_ninguno():
+    r = {"account_id": CUENTA, "region": REGION, "service": "rds", "type": "db_instance", "id": "db1", "tags": {},
+         "relations": {}, "attrs": {"publicly_accessible": True, "storage_encrypted": False}}
+    f = validar.deduplicar(reglas.aplicar({"generated_at": "2026-10-18T00:00:00Z", "resources": [r]}))
+    titulos = {x["title"] for x in f if x["resource_id"] == "db1"}
+    assert titulos == {"Base de datos RDS con acceso público", "Base de datos RDS sin cifrado en reposo"}
+
+
+def test_cruce_discrimina_por_servicio():
+    from hallazgos import completar_v2, hallazgo
+    a = completar_v2(hallazgo("inventario", "baja", CUENTA, REGION, None, "t", "d", 1.0, "cruce-billing",
+                              rule_id="cruce.no_inventariado", discriminador="Amazon RDS"))
+    b = completar_v2(hallazgo("inventario", "baja", CUENTA, REGION, None, "t", "d", 1.0, "cruce-billing",
+                              rule_id="cruce.no_inventariado", discriminador="AWS Lambda"))
+    assert a["fingerprint"] != b["fingerprint"] and "_discriminador" not in a
+
+
+def test_validar_completo_fingerprints_unicos_y_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(doctor, "version", lambda: None)
+    fix = AQUI / "fixtures"
+    disc = json.loads((fix / "discovery.json").read_text())
+    inv = json.loads((fix / "inventory.json").read_text())
+    inv["run"] = {"run_id": "2026-10-18T000000Z", "org_alias": "o-x", "flags": {"inventariar": {}}}
+    findings, _ = validar.validar(CFG, disc, inv, tmp_path, sin_doctor=True)
+    huellas = [f["fingerprint"] for f in findings]
+    assert len(huellas) == len(set(huellas)) and all(f["rule_id"] for f in findings)
+    run = json.loads((tmp_path / "findings.json").read_text())["run"]
+    assert run["run_id"] == "2026-10-18T000000Z" and run["flags"]["validar"]["sin_doctor"] is True
+    assert "inventariar" in run["flags"]
+
+
+# ---------- Contrato v2 · carpetas de corrida ----------
+
+def test_nueva_corrida_y_corrida_actual(tmp_path, monkeypatch):
+    from common import corrida_actual, heredar_run, marcar_ultima, nueva_corrida
+    cfg = {"output_dir": str(tmp_path)}
+    assert corrida_actual(cfg).name == dt.datetime.now().strftime("%Y-%m-%d")  # sin ULTIMA: corridas viejas
+    c1 = nueva_corrida(cfg)
+    assert corrida_actual(cfg) != c1                     # ULTIMA recién se marca con discovery.json escrito
+    marcar_ultima(c1)
+    assert c1.is_dir() and corrida_actual(cfg) == c1 and (tmp_path / "ULTIMA").read_text().strip() == c1.name
+    for malo in ("../otra", "a/b"):
+        (tmp_path / "ULTIMA").write_text(malo)
+        assert corrida_actual(cfg).name == dt.datetime.now().strftime("%Y-%m-%d")
+    assert dt.datetime.strptime(c1.name, "%Y-%m-%dT%H%M%SZ")
+    # Otra organización en el mismo output_dir: la fase siguiente aborta.
+    import pytest
+    with pytest.raises(SystemExit):
+        heredar_run({"run": {"org_alias": "otra", "organization_id": "o-1"}}, {"org_alias": "esta"}, "inventariar", {})
+    # Corrida sin alias (org_alias = organization_id): agregar el alias al config después no la bloquea.
+    heredar_run({"run": {"org_alias": "o-1", "organization_id": "o-1"}}, {"org_alias": "esta"}, "inventariar", {})
+    assert heredar_run({"run": {"org_alias": "esta", "flags": {"a": 1}}}, {"org_alias": "esta"}, "b", {"x": 2})[
+        "flags"] == {"a": 1, "b": {"x": 2}}
+
+
+def test_un_ahorro_por_recurso_entre_issues_distintos():
+    from hallazgos import hallazgo
+    doc = hallazgo("desperdicio", "baja", CUENTA, REGION, "snap-1", "huérfano", "d", 2.0, "aws-doctor",
+                   rule_id="aws-doctor.orphaned_snapshots")
+    regla = hallazgo("desperdicio", "baja", CUENTA, REGION, "snap-1", "viejo", "d", 2.0, "regla",
+                     rule_id="regla.snapshots_viejos")
+    riesgo = hallazgo("riesgo", "baja", CUENTA, REGION, "snap-1", "público", "d", None, "regla", rule_id="regla.x")
+    costo_antes = hallazgo("costo", "baja", CUENTA, REGION, "vol-1", "gp2", "d", 1.0, "regla", rule_id="regla.gp2")
+    desp_despues = hallazgo("desperdicio", "media", CUENTA, REGION, "vol-1", "sin adjuntar", "d", 8.0, "regla",
+                            rule_id="regla.ebs_sin_adjuntar")
+    salida = validar.deduplicar([doc, regla, riesgo, costo_antes, desp_despues])
+    assert [f["rule_id"] for f in salida] == ["aws-doctor.orphaned_snapshots", "regla.x", "regla.ebs_sin_adjuntar"]
+    assert sum(f["monthly_usd"] or 0 for f in salida if f["is_saving"]) == 10.0
+
+
+def test_config_exige_cuentas_como_texto(tmp_path):
+    import pytest
+    from common import cargar_config
+    malo = tmp_path / "malo.yaml"
+    malo.write_text("exclude_accounts: [012345670123]\n")          # YAML: octal → otro número
+    with pytest.raises(SystemExit):
+        cargar_config(malo)
+    bueno = tmp_path / "bueno.yaml"
+    bueno.write_text('exclude_accounts: ["012345670123"]\n')
+    assert cargar_config(bueno)["exclude_accounts"] == ["012345670123"]

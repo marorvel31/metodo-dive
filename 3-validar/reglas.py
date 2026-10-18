@@ -291,10 +291,10 @@ def regla_root(recursos, ctx):
             out.append(hallazgo("riesgo", "alta", r["account_id"], None, "root-access-keys",
                                 "Usuario root con access keys",
                                 "La cuenta tiene access keys del root: credenciales permanentes sin límite de permisos. "
-                                "Revisa su último uso y bórralas.", None, FUENTE))
+                                "Revisa su último uso y bórralas.", None, FUENTE, rule_id="regla.root_access_keys"))
         if a.get("password_present") and not a.get("mfa_enabled"):
             out.append(hallazgo("riesgo", "alta", r["account_id"], None, "root", "Usuario root sin MFA",
-                                "El root tiene password y no tiene MFA.", None, FUENTE))
+                                "El root tiene password y no tiene MFA.", None, FUENTE, rule_id="regla.root_sin_mfa"))
     return out
 
 
@@ -321,5 +321,7 @@ def aplicar(inventory):
     recursos = inventory.get("resources", [])
     findings = []
     for regla in REGLAS:
-        findings.extend(regla(recursos, ctx))
+        for f in regla(recursos, ctx):
+            f.setdefault("rule_id", "regla." + regla.__name__.removeprefix("regla_"))
+            findings.append(f)
     return findings

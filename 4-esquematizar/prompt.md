@@ -16,10 +16,10 @@ jq --arg a "$ACC" '{
   account: .accounts[$a],
   resources: [.resources[] | select(.account_id == $a)],
   errors: [.errors[] | select(.account_id == $a)]
-}' salida/<fecha>/inventory.json > cuenta.json
+}' salida/<corrida>/inventory.json > cuenta.json
 
-jq --arg a "$ACC" '[.findings[] | select(.account_id == $a)]' salida/<fecha>/findings.json > cuenta_findings.json
-jq --arg a "$ACC" '.accounts[$a]' salida/<fecha>/discovery.json > cuenta_costos.json
+jq --arg a "$ACC" '[.findings[] | select(.account_id == $a)]' salida/<corrida>/findings.json > cuenta_findings.json
+jq --arg a "$ACC" '.accounts[$a]' salida/<corrida>/discovery.json > cuenta_costos.json
 ```
 
 Si la cuenta tiene miles de recursos, quita `tags` y deja solo `attrs` relevantes antes de enviarla. **Nunca recortes `relations`**: son la única fuente de conexiones.
