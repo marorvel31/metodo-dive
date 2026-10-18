@@ -73,7 +73,7 @@ ULTIMA = "ULTIMA"  # archivo en output_dir con el run_id de la última corrida e
 
 
 def _base_salida(cfg):
-    base = Path(cfg["output_dir"])
+    base = Path(cfg["output_dir"]).expanduser()  # "~/clientes/x/runs" no debe acabar en <repo>/~/...
     return base if base.is_absolute() else RAIZ / base
 
 
