@@ -79,7 +79,7 @@ Para ver el resultado sin correr nada, abre `ejemplos/`: una organización sint�
 .venv/bin/python 5-dashboard/dashboard.py --runs ~/clientes/a/runs --runs ~/clientes/b/runs   # varias organizaciones
 ```
 
-Abre la URL que imprime (`http://127.0.0.1:<puerto>/#t=<token>`). Muestra, por organización y corrida, con filtro por cuenta: factura de la ventana y del último mes (con impuestos, Savings Plans y RIs), uso por cuenta, servicios y tipos de uso más caros, el inventario completo y los hallazgos con su historia entre corridas (nuevo, resuelto, no verificado) y un estado editable (abierto, aceptado, ignorado, resuelto) que se guarda por fingerprint.
+Abre el navegador solo, en `http://127.0.0.1:8765/#t=<token>` (si el puerto está ocupado, usa otro y lo imprime; `--sin-navegador` para solo imprimir la URL). Las corridas nuevas aparecen al recargar la página, sin reiniciar. Muestra, por organización y corrida, con filtro por cuenta: factura de la ventana y del último mes (con impuestos, Savings Plans y RIs), uso por cuenta, servicios y tipos de uso más caros, el inventario completo y los hallazgos con su historia entre corridas (nuevo, resuelto, no verificado) y un estado editable (abierto, aceptado, ignorado, resuelto) que se guarda por fingerprint.
 
 Sin dependencias (`http.server` + `sqlite3`). La base (`dashboard.sqlite`, modo 0600) queda junto a las corridas. Solo escucha en 127.0.0.1, valida el `Host`, pide el token en cada llamada por header (sin cookies: una cookie de 127.0.0.1 viaja a cualquier otro puerto local) y abre el `reporte.html` de cada corrida en un iframe aislado. Para compartir resultados usa la salida anonimizada, no el dashboard.
 

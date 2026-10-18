@@ -346,7 +346,6 @@ def resumen(con, org_id, run_id, cuenta=None):
     cargos_mes = [dict(r) for r in con.execute(
         """SELECT month, ROUND(SUM(usd), 2) usd FROM cargos WHERE run_id = ? AND (? IS NULL OR account_id = ?)
            GROUP BY month ORDER BY month""", (run_id, *filtro))]
-    uso_ultimo = round(sum(r["usd"] for r in por_cuenta_mes if r["month"] == ultimo), 2)
     # Para la factura, el uso sin umbral (usage_total_monthly_usd) si la corrida lo trae; si no, el de services.
     total_mes = [dict(r) for r in con.execute(
         """SELECT month, ROUND(SUM(usd), 2) usd FROM uso_total WHERE run_id = ? AND (? IS NULL OR account_id = ?)

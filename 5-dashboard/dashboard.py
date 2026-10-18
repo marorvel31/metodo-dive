@@ -9,12 +9,16 @@ manda solo en el header X-DIVE-Token. Sin cookies: una cookie de 127.0.0.1 viaja
 127.0.0.1 (las cookies no distinguen puerto), o sea a otros servicios locales.
 
 Uso:
-  python 5-dashboard/dashboard.py                       # output_dir de DIVE_CONFIG, puerto libre
+  python 5-dashboard/dashboard.py                       # output_dir de DIVE_CONFIG, puerto 8765, abre el navegador
   python 5-dashboard/dashboard.py --runs ~/dive-data/org1/runs --runs ~/dive-data/org2/runs --puerto 8765
+  python 5-dashboard/dashboard.py --sin-navegador       # no abre el navegador (solo imprime la URL)
   python 5-dashboard/dashboard.py --solo-ingerir        # actualiza la base y sale
+
+Las corridas nuevas del output_dir aparecen al recargar la página: no hace falta reiniciar.
 """
 
 import argparse
+import errno
 import json
 import re
 import secrets
@@ -22,6 +26,7 @@ import sqlite3
 import sys
 import threading
 import time
+import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -163,6 +168,7 @@ def crear_handler(db, carpetas, token, puerto):
             con = base.conectar(db)
             try:
                 if ruta == "/api/orgs":
+                    base.ingerir(con, carpetas)  # corridas nuevas sin reiniciar (solo lee las que cambiaron)
                     return self._json(base.orgs(con))
                 org = q.get("org", "")
                 cuenta = q.get("cuenta") or None
@@ -221,7 +227,8 @@ def main():
     p.add_argument("--config", help="dive.config.yaml (por defecto DIVE_CONFIG): toma su output_dir")
     p.add_argument("--runs", action="append", help="output_dir con corridas (repetible, para varias organizaciones)")
     p.add_argument("--db", help="base SQLite (por defecto <primer output_dir>/dashboard.sqlite)")
-    p.add_argument("--puerto", type=int, default=0, help="0 = uno libre")
+    p.add_argument("--puerto", type=int, default=8765, help="8765 por defecto; si está ocupado, uno libre. 0 = uno libre")
+    p.add_argument("--sin-navegador", action="store_true", help="no abrir el navegador, solo imprimir la URL")
     p.add_argument("--solo-ingerir", action="store_true")
     a = p.parse_args()
 
@@ -245,10 +252,19 @@ def main():
         return
 
     token = secrets.token_urlsafe(24)
-    servidor = ThreadingHTTPServer(("127.0.0.1", a.puerto), None)
+    try:
+        servidor = ThreadingHTTPServer(("127.0.0.1", a.puerto), None)
+    except OSError as e:
+        if e.errno != errno.EADDRINUSE or a.puerto == 0:
+            raise
+        print(f"El puerto {a.puerto} está ocupado (¿otro dashboard abierto?): uso uno libre.")
+        servidor = ThreadingHTTPServer(("127.0.0.1", 0), None)
     puerto = servidor.server_address[1]
     servidor.RequestHandlerClass = crear_handler(db, carpetas, token, puerto)
-    print(f"Dashboard: http://127.0.0.1:{puerto}/#t={token}\n(solo en esta máquina; Ctrl+C para cerrar)", flush=True)
+    url = f"http://127.0.0.1:{puerto}/#t={token}"
+    print(f"\n  Dashboard:  {url}\n\n  Solo en esta máquina. El token cambia en cada arranque. Ctrl+C para cerrar.\n", flush=True)
+    if not a.sin_navegador:
+        webbrowser.open(url)  # el token va en el fragmento: no llega al historial del servidor ni a ningún log
     try:
         servidor.serve_forever()
     except KeyboardInterrupt:
