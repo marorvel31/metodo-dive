@@ -26,9 +26,24 @@ done
 [[ -z "$PROFILE" || -z "$USERNAME" ]] && { echo "Faltan --profile y --user"; exit 1; }
 
 aws_() { aws --profile "$PROFILE" "$@"; }
-run() { if $APPLY; then "$@"; else echo "[dry-run] $*"; fi; }
+# Ejecuta (o muestra en dry-run). ConflictException en Identity Center significa "otra escritura aún
+# no se propagó; reintenta", no "ya existe": se reintenta con espera creciente. Solo en
+# attach-managed-policy un Conflict es "ya estaba adjunta". Cualquier otro error aborta, para no
+# dejar el permission set a medias (ej. sin la inline policy con los Deny).
+run() {
+  if ! $APPLY; then echo "[dry-run] $*"; return 0; fi
+  local err intento
+  for intento in 1 2 3 4 5; do
+    if err=$("$@" 2>&1 >/dev/null); then return 0; fi
+    if ! grep -q "ConflictException" <<<"$err"; then echo "ERROR en $5: $err" >&2; exit 1; fi
+    if [[ "$5" == "attach-managed-policy-to-permission-set" ]]; then echo "  (ViewOnlyAccess ya estaba adjunta)"; return 0; fi
+    sleep $((intento * 3))
+  done
+  echo "ERROR en $5 tras 5 intentos: $err" >&2; exit 1
+}
 
 INSTANCE=$(aws_ sso-admin list-instances --query 'Instances[0].InstanceArn' --output text)
+[[ "$INSTANCE" == "None" || -z "$INSTANCE" ]] && { echo "No hay instancia de IAM Identity Center"; exit 1; }
 STORE=$(aws_ sso-admin list-instances --query 'Instances[0].IdentityStoreId' --output text)
 USER_ID=$(aws_ identitystore list-users --identity-store-id "$STORE" \
   --filters AttributePath=UserName,AttributeValue="$USERNAME" --query 'Users[0].UserId' --output text)
@@ -58,23 +73,60 @@ else
 fi
 
 run aws --profile "$PROFILE" sso-admin attach-managed-policy-to-permission-set --instance-arn "$INSTANCE" \
-  --permission-set-arn "$PS_ARN" --managed-policy-arn arn:aws:iam::aws:policy/job-function/ViewOnlyAccess \
-  || echo "  ViewOnlyAccess ya estaba adjunta"
+  --permission-set-arn "$PS_ARN" --managed-policy-arn arn:aws:iam::aws:policy/job-function/ViewOnlyAccess
 run aws --profile "$PROFILE" sso-admin put-inline-policy-to-permission-set --instance-arn "$INSTANCE" \
   --permission-set-arn "$PS_ARN" --inline-policy "file://$HERE/readonly-policy.json"
+if $APPLY; then
+  # Sin la inline policy el rol queda solo con ViewOnlyAccess, sin los Deny: se comprueba que quedó igual al archivo.
+  aws_ sso-admin get-inline-policy-for-permission-set --instance-arn "$INSTANCE" --permission-set-arn "$PS_ARN" \
+    --query InlinePolicy --output text | python3 -c 'import json,sys; sys.exit(json.load(sys.stdin) != json.load(open(sys.argv[1])))' \
+    "$HERE/readonly-policy.json" || { echo "ERROR: la inline policy aplicada no coincide con readonly-policy.json" >&2; exit 1; }
+fi
 
 # Re-ejecutable: si el permission set ya existía, empuja la policy actualizada a las cuentas ya asignadas.
-if [[ "$PS_ARN" != "<nuevo>" ]]; then
-  run aws --profile "$PROFILE" sso-admin provision-permission-set --instance-arn "$INSTANCE" \
-    --permission-set-arn "$PS_ARN" --target-type ALL_PROVISIONED_ACCOUNTS \
-    --query 'PermissionSetProvisioningStatus.Status' --output text
+if [[ "$PS_ARN" != "<nuevo>" ]] && $APPLY; then
+  REQ=$(aws_ sso-admin provision-permission-set --instance-arn "$INSTANCE" --permission-set-arn "$PS_ARN" \
+    --target-type ALL_PROVISIONED_ACCOUNTS --query 'PermissionSetProvisioningStatus.RequestId' --output text)
+  for _ in $(seq 1 30); do
+    estado=$(aws_ sso-admin describe-permission-set-provisioning-status --instance-arn "$INSTANCE" \
+      --provision-permission-set-request-id "$REQ" --query 'PermissionSetProvisioningStatus.Status' --output text)
+    [[ "$estado" == "IN_PROGRESS" ]] || break
+    sleep 3
+  done
+  [[ "$estado" == "SUCCEEDED" ]] || { echo "ERROR: aprovisionamiento $REQ quedó en $estado" >&2; exit 1; }
+  echo "Policy actualizada en las cuentas ya asignadas."
+elif [[ "$PS_ARN" != "<nuevo>" ]]; then
+  echo "[dry-run] provision-permission-set en las cuentas ya asignadas"
 fi
 
 for acct in $ACCOUNTS; do
   run aws --profile "$PROFILE" sso-admin create-account-assignment --instance-arn "$INSTANCE" \
     --target-id "$acct" --target-type AWS_ACCOUNT --permission-set-arn "$PS_ARN" \
-    --principal-type USER --principal-id "$USER_ID" --query 'AccountAssignmentCreationStatus.Status' --output text \
-    || echo "  $acct: ya asignada"
+    --principal-type USER --principal-id "$USER_ID"
 done
 
-$APPLY && echo "Listo. Genera los perfiles con: python setup/generar_perfiles.py (usa management_profile y scan_role_name de dive.config.yaml)"
+# create-account-assignment es asíncrono: se confirma que cada cuenta quedó asignada.
+if $APPLY; then
+  echo "Esperando el aprovisionamiento (hasta ~2 min)..."
+  faltan="$ACCOUNTS"
+  for _ in $(seq 1 24); do
+    pendientes=""
+    for acct in $faltan; do
+      n=$(aws_ sso-admin list-account-assignments --instance-arn "$INSTANCE" --account-id "$acct" \
+        --permission-set-arn "$PS_ARN" --query "length(AccountAssignments[?PrincipalId=='$USER_ID'])" --output text)
+      [[ "$n" == "1" ]] || pendientes="$pendientes $acct"
+    done
+    faltan="$pendientes"
+    [[ -z "${faltan// /}" ]] && break
+    sleep 5
+  done
+  if [[ -n "${faltan// /}" ]]; then
+    echo "Sin asignación tras la espera:$faltan. Revisa la consola y vuelve a correr el script." >&2
+    exit 1
+  fi
+  echo "Asignado en todas las cuentas."
+fi
+
+if $APPLY; then
+  echo "Listo. Genera los perfiles con: python setup/generar_perfiles.py (usa management_profile y scan_role_name de dive.config.yaml)"
+fi

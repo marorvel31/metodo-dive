@@ -45,6 +45,13 @@ def listar_cuentas(cfg, session=None):
     return {k: v for k, v in cuentas.items() if (not incluir or k in incluir) and k not in excluir}
 
 
+def regiones_habilitadas(session):
+    """Regiones habilitadas en la cuenta (sin las opt-in desactivadas). describe_regions sin
+    AllRegions solo devuelve las habilitadas; se consulta en us-east-1, que siempre lo está."""
+    resp = client(session, "ec2", "us-east-1").describe_regions()
+    return sorted(r["RegionName"] for r in resp["Regions"])
+
+
 def sesion_cuenta(cfg, account_id, session_management=None):
     """Sesión de solo lectura dentro de una cuenta miembro."""
     if cfg["access_mode"] == "sso":

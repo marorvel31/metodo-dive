@@ -2,6 +2,8 @@
 
 import json
 
+from botocore.exceptions import ClientError
+
 from common import recurso
 from common.aws import client
 
@@ -15,13 +17,21 @@ _ATRIBUTOS = ["QueueArn", "VisibilityTimeout", "MessageRetentionPeriod", "DelayS
               "MaximumMessageSize", "ApproximateNumberOfMessages", "SqsManagedSseEnabled",
               "KmsMasterKeyId", "RedrivePolicy"]
 
+# SQS usa protocolo JSON compatible con query: el código puede llegar con cualquiera de los dos nombres.
+_COLA_NO_EXISTE = {"QueueDoesNotExist", "AWS.SimpleQueueService.NonExistentQueue"}
+
 
 def collect(session, region, account_id):
     sqs = client(session, "sqs", region)
     recursos = []
     for pagina in sqs.get_paginator("list_queues").paginate():
         for url in pagina.get("QueueUrls", []):
-            a = sqs.get_queue_attributes(QueueUrl=url, AttributeNames=_ATRIBUTOS)["Attributes"]
+            try:
+                a = sqs.get_queue_attributes(QueueUrl=url, AttributeNames=_ATRIBUTOS)["Attributes"]
+            except ClientError as e:
+                if e.response.get("Error", {}).get("Code") in _COLA_NO_EXISTE:
+                    continue  # borrada entre list_queues y get_queue_attributes: no tumba al resto
+                raise
             try:
                 tags = sqs.list_queue_tags(QueueUrl=url).get("Tags", {})
             except Exception:  # noqa: BLE001 — sin tags no se pierde la cola

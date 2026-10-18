@@ -4,12 +4,12 @@ Lee discovery.json + inventory.json de la carpeta de salida y escribe ahí mismo
 findings.json (forma de CONTRATO.md) y findings.md (resumen ordenado por severidad y $).
 
 Tres fuentes:
-  a) aws-doctor  → doctor.py  (salida cruda en salida/<fecha>/aws-doctor/)
+  a) aws-doctor  → doctor.py  (salida cruda en salida/<corrida>/aws-doctor/)
   b) cruce-billing → este archivo: lo que se cobra y no está inventariado, servicios sin
      colector y regiones sorpresa
   c) regla       → reglas.py  (desperdicio y riesgo sobre los recursos inventariados)
 
-Uso: python 3-validar/validar.py [--inventory salida/<fecha>/inventory.json] [--discovery ...]
+Uso: python 3-validar/validar.py [--inventory salida/<corrida>/inventory.json] [--discovery ...]
                                  [--sin-doctor] [--timeout-doctor 900]
 """
 
@@ -25,11 +25,11 @@ sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(RAIZ / "2-inventariar"))
 sys.path.insert(0, str(AQUI))
 
-from common import SERVICIOS_GOBIERNO, ahora, cargar_config, carpeta_salida, escribir_json, leer_json  # noqa: E402
+from common import SERVICIOS_GOBIERNO, ahora, cargar_config, corrida_actual, escribir_json, heredar_run, leer_json  # noqa: E402
 
 import doctor  # noqa: E402
 import reglas  # noqa: E402
-from hallazgos import SEVERIDADES, hallazgo, severidad_por_costo  # noqa: E402
+from hallazgos import SEVERIDADES, completar_v2, hallazgo, severidad_por_costo  # noqa: E402
 
 FUENTE_CRUCE = "cruce-billing"
 UMBRAL_REGION_SORPRESA = 0.05   # región con menos de este % del costo de la cuenta
@@ -95,6 +95,7 @@ def cruce_billing(discovery, inventory, mods):
         con_recursos_region.add((r["account_id"], r["region"], r["service"]))
         con_recursos_cuenta.add((r["account_id"], r["service"]))
     escaneado = {(s["account_id"], s["region"], s["collector"]) for s in inventory.get("scanned", [])}
+    omitidas = {(s["account_id"], s["region"]) for s in inventory.get("skipped", [])}
     errores = {}
     for e in inventory.get("errors", []):
         errores.setdefault((e.get("account_id"), e.get("collector")), []).append(e)
@@ -127,6 +128,8 @@ def cruce_billing(discovery, inventory, mods):
                 if region == "global":
                     continue  # colector regional con costo sin región: no hay dónde buscar
                 hay = any((account_id, region, m.NAME) in con_recursos_region for m in mods_s)
+                if not hay and (account_id, region) in omitidas:
+                    continue  # región no habilitada hoy: lo cobrado fue antes de deshabilitarla
                 if not hay and usd / meses >= MIN_USD_MES_COBRO:
                     findings.append(_no_inventariado(account_id, region, servicio, usd / meses, mods_s,
                                                      escaneado, errores, series.get(servicio), ultimo))
@@ -155,14 +158,15 @@ def cruce_billing(discovery, inventory, mods):
                         "riesgo", "baja", account_id, region, None, "Región sorpresa (poco costo, posible olvido)",
                         f"{usd / total:.1%} del costo de la cuenta en el periodo. Servicios: {servicios}. "
                         f"Colectores con recursos aquí: {', '.join(inventariados) or 'ninguno'}.",
-                        usd / meses, FUENTE_CRUCE))
+                        usd / meses, FUENTE_CRUCE, rule_id="cruce.region_sorpresa"))
 
     # (2) servicios con costo sin colector: uno por servicio, con las cuentas afectadas.
     for servicio, cuentas in sorted(sin_colector.items()):
         total = sum(cuentas.values())
         detalle = ", ".join(f"{a} ${v / meses:.2f}/mes" for a, v in sorted(cuentas.items(), key=lambda x: -x[1]))
         findings.append(hallazgo("inventario", "baja", None, None, None, f"Servicio sin colector: {servicio}",
-                                 f"Se cobra en {len(cuentas)} cuenta(s): {detalle}.", total / meses, FUENTE_CRUCE))
+                                 f"Se cobra en {len(cuentas)} cuenta(s): {detalle}.", total / meses, FUENTE_CRUCE,
+                                 rule_id="cruce.sin_colector", discriminador=servicio))
     return findings
 
 
@@ -175,7 +179,8 @@ def _no_inventariado(account_id, region, servicio, usd_mes, mods_s, escaneado, e
             return hallazgo("inventario", "baja", account_id, region, None,
                             f"Dejó de cobrarse (recurso ya borrado): {servicio}",
                             f"Último mes con cobro: {meses_con_cobro[-1]} (~${serie[meses_con_cobro[-1]]:.2f}). "
-                            f"Nada que limpiar; confirma que el borrado fue intencional.", 0.0, FUENTE_CRUCE)
+                            f"Nada que limpiar; confirma que el borrado fue intencional.", 0.0, FUENTE_CRUCE,
+                            rule_id="cruce.dejo_de_cobrarse", discriminador=servicio)
         usd_mes = serie.get(ultimo, usd_mes)  # el último mes es más fiel que el promedio del periodo
     fallos = [e for n in nombres for e in errores.get((account_id, n), [])
               if region is None or e.get("region") in (region, None)]
@@ -189,20 +194,38 @@ def _no_inventariado(account_id, region, servicio, usd_mes, mods_s, escaneado, e
         estado = "el colector no se ejecutó aquí (¿corrida con --solo?)"
     return hallazgo("inventario", severidad_por_costo(usd_mes, "baja"), account_id, region, None,
                     f"Se cobra pero no está inventariado: {servicio}",
-                    f"~${usd_mes:.2f}/mes; colectores {', '.join(nombres)}: {estado}.", usd_mes, FUENTE_CRUCE)
+                    f"~${usd_mes:.2f}/mes; colectores {', '.join(nombres)}: {estado}.", usd_mes, FUENTE_CRUCE,
+                    rule_id="cruce.no_inventariado", discriminador=servicio)
 
 
 # ---------- consolidar y escribir ----------
 
 def deduplicar(findings):
-    """Si aws-doctor y una regla marcan el mismo recurso con la misma categoría, queda el primero."""
-    vistos, salida = set(), []
-    for f in findings:
-        llave = (f["account_id"], f["resource_id"], f["category"])
-        if f["resource_id"] and llave in vistos:
+    """Un finding por fingerprint (mismo problema canónico sobre el mismo recurso): si aws-doctor y una
+    regla detectan lo mismo, queda el primero. Dos problemas distintos del mismo recurso (RDS público y
+    sin cifrar) se mantienen los dos.
+
+    Además, un recurso suma ahorro una sola vez: si ya tiene un finding de desperdicio (ej. volumen sin
+    adjuntar), se descarta su costo (migrar gp2→gp3); y entre varios de ahorro del mismo recurso con
+    issue_ids distintos (snapshot huérfano de aws-doctor y viejo de la regla) queda el primero.
+    """
+    vistos, con_ahorro, salida = set(), set(), []
+    findings = [completar_v2(f) for f in findings]
+    # Primero los de desperdicio: si el mismo recurso trae un "costo", el que se conserva es el desperdicio.
+    orden = sorted(range(len(findings)), key=lambda i: (findings[i]["category"] != "desperdicio", i))
+    elegidos = set()
+    for i in orden:
+        f = findings[i]
+        recurso = (f["account_id"], f["region"], f["resource_id"])
+        if f["fingerprint"] in vistos:
             continue
-        vistos.add(llave)
-        salida.append(f)
+        if f["resource_id"] and f["is_saving"]:
+            if recurso in con_ahorro:
+                continue
+            con_ahorro.add(recurso)
+        vistos.add(f["fingerprint"])
+        elegidos.add(i)
+    salida = [f for i, f in enumerate(findings) if i in elegidos]
     return salida
 
 
@@ -222,12 +245,12 @@ def _celda(texto):
 def generar_md(findings, discovery, errores):
     nombres = {a: c.get("name", a) for a, c in discovery["accounts"].items()}
     cuenta = lambda a: f"{nombres.get(a, a)} ({a})" if a else "varias"  # noqa: E731
-    total = sum(f["monthly_usd"] or 0 for f in findings if f["category"] in ("desperdicio", "costo"))
+    total = sum(f["monthly_usd"] or 0 for f in findings if f.get("is_saving"))
 
     lineas = ["# Findings · Método DIVE", "",
               f"Generado: {ahora()} · {len(findings)} findings · {len(discovery['accounts'])} cuentas", "",
               f"Ahorro potencial estimado (desperdicio + costo): **${total:,.2f}/mes**. "
-              "Es un tope: algunos findings se solapan (ej. un volumen gp2 sin adjuntar).", "",
+              "Es un tope: son estimaciones, y un recurso marcado como desperdicio no suma además su optimización.", "",
               "| Severidad | Findings | $/mes |", "|---|---:|---:|"]
     for sev in SEVERIDADES:
         grupo = [f for f in findings if f["severity"] == sev]
@@ -267,6 +290,7 @@ def validar(cfg, discovery, inventory, salida, sin_doctor=False, timeout_doctor=
     """Corre las tres fuentes y escribe findings.json + findings.md en `salida`."""
     salida = Path(salida)
     findings, errores = [], []
+    heredar_run(inventory, cfg, "validar", {})  # aborta antes de aws-doctor si la corrida es de otra organización
 
     if sin_doctor:
         print("aws-doctor: omitido (--sin-doctor)")
@@ -276,7 +300,10 @@ def validar(cfg, discovery, inventory, salida, sin_doctor=False, timeout_doctor=
             from common.aws import sesion_cuenta, sesion_management
             mgmt = sesion_management(cfg)
             creds_fn = lambda a: sesion_cuenta(cfg, a, mgmt).get_credentials().get_frozen_credentials()  # noqa: E731
-        f_doc, e_doc = doctor.ejecutar(cfg, discovery, salida, timeout=timeout_doctor, creds_fn=creds_fn)
+        habilitadas = {a: c["enabled_regions"] for a, c in inventory.get("accounts", {}).items()
+                       if c.get("enabled_regions")}
+        f_doc, e_doc = doctor.ejecutar(cfg, discovery, salida, timeout=timeout_doctor, creds_fn=creds_fn,
+                                       habilitadas=habilitadas)
         findings += f_doc
         errores += e_doc
 
@@ -285,7 +312,10 @@ def validar(cfg, discovery, inventory, salida, sin_doctor=False, timeout_doctor=
     findings = ordenar_y_numerar(deduplicar(findings))
 
     # "errors" es adicional al contrato: corridas de aws-doctor que fallaron.
-    escribir_json(salida / "findings.json", {"generated_at": ahora(), "findings": findings, "errors": errores})
+    run = heredar_run(inventory, cfg, "validar", {"sin_doctor": sin_doctor,
+                                                  "aws_doctor_version": None if sin_doctor else doctor.version()})
+    escribir_json(salida / "findings.json", {"run": run, "generated_at": ahora(), "findings": findings,
+                                             "errors": errores})
     (salida / "findings.md").write_text(generar_md(findings, discovery, errores))
     return findings, errores
 
@@ -300,7 +330,7 @@ def main():
     args = parser.parse_args()
 
     cfg = cargar_config(args.config)
-    ruta_inv = Path(args.inventory) if args.inventory else carpeta_salida(cfg) / "inventory.json"
+    ruta_inv = Path(args.inventory) if args.inventory else corrida_actual(cfg) / "inventory.json"
     ruta_disc = Path(args.discovery) if args.discovery else ruta_inv.parent / "discovery.json"
     findings, errores = validar(cfg, leer_json(ruta_disc), leer_json(ruta_inv), ruta_inv.parent,
                                 args.sin_doctor, args.timeout_doctor)

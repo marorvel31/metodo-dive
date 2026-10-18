@@ -4,7 +4,14 @@
     {
       "Sid": "DiveBillingRead",
       "Effect": "Allow",
-      "Action": ["ce:Get*", "ce:Describe*", "ce:List*"],
+      "Action": [
+        "ce:Get*",
+        "ce:Describe*",
+        "ce:List*",
+        "pricing:GetProducts",
+        "pricing:DescribeServices",
+        "pricing:GetAttributeValues"
+      ],
       "Resource": "*"
     },
     {
@@ -46,7 +53,6 @@
         "kinesis:ListTagsForStream",
         "firehose:DescribeDeliveryStream",
         "firehose:ListDeliveryStreams",
-        "apigateway:GET",
         "backup:GetBackupPlan",
         "backup:ListBackupPlans",
         "backup:ListBackupVaults",
@@ -58,9 +64,97 @@
         "transfer:ListUsers",
         "dms:DescribeReplicationInstances",
         "dms:DescribeReplicationTasks",
-        "dms:ListTagsForResource"
+        "dms:ListTagsForResource",
+        "ecr:DescribeImages",
+        "ecr:GetLifecyclePolicy",
+        "iam:GetAccessKeyLastUsed",
+        "cloudwatch:DescribeAlarms",
+        "application-autoscaling:DescribeScalableTargets",
+        "ecr:ListTagsForResource",
+        "elasticfilesystem:DescribeMountTargets",
+        "elasticfilesystem:DescribeMountTargetSecurityGroups",
+        "es:DescribeDomains",
+        "es:ListDomainNames",
+        "events:ListEventBuses",
+        "glue:GetCrawlers",
+        "glue:GetDatabases",
+        "glue:GetJobs",
+        "sns:GetTopicAttributes",
+        "ssm:DescribeParameters"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "DiveApiGatewayMetadataRead",
+      "Effect": "Allow",
+      "Action": "apigateway:GET",
+      "Resource": [
+        "arn:aws:apigateway:*::/domainnames/*",
+        "arn:aws:apigateway:*::/domainnames/*/basepathmappings",
+        "arn:aws:apigateway:*::/vpclinks/*",
+        "arn:aws:apigateway:*::/apis/*"
+      ]
+    },
+    {
+      "Sid": "DiveDenyContentAndSecretReads",
+      "Effect": "Deny",
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:GetObjectTorrent",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:BatchGetSecretValue",
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath",
+        "ssm:GetParameterHistory",
+        "kms:Decrypt",
+        "logs:GetLogEvents",
+        "logs:FilterLogEvents",
+        "logs:StartLiveTail",
+        "logs:GetLogRecord",
+        "ecs:DescribeTaskDefinition",
+        "ec2:DescribeLaunchTemplateVersions",
+        "ec2:DescribeInstanceAttribute",
+        "ec2:GetPasswordData",
+        "ec2:GetConsoleOutput",
+        "ec2:GetConsoleScreenshot",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "rds:DownloadDBLogFilePortion",
+        "rds:DownloadCompleteDBLogFile",
+        "dynamodb:GetItem",
+        "dynamodb:BatchGetItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "sqs:ReceiveMessage",
+        "kinesis:GetRecords",
+        "kinesis:GetShardIterator",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage",
+        "ecr:GetAuthorizationToken",
+        "athena:GetQueryResults",
+        "codecommit:GetFile",
+        "codecommit:GetBlob",
+        "cloudformation:GetTemplate",
+        "cloudformation:DescribeStacks",
+        "elasticbeanstalk:DescribeConfigurationSettings",
+        "autoscaling:DescribeLaunchConfigurations",
+        "ec2:DescribeSpotFleetRequests",
+        "ec2:DescribeSpotInstanceRequests"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DiveDenyApiGatewayKeyValues",
+      "Effect": "Deny",
+      "Action": "apigateway:GET",
+      "Resource": [
+        "arn:aws:apigateway:*::/apikeys",
+        "arn:aws:apigateway:*::/apikeys/*",
+        "arn:aws:apigateway:*::/usageplans/*/keys",
+        "arn:aws:apigateway:*::/usageplans/*/keys/*"
+      ]
     }
   ]
 }

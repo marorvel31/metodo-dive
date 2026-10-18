@@ -10,6 +10,7 @@ NAME = "eventbridge"
 TRIGGERS = ["CloudWatch Events", "Amazon EventBridge"]
 ALWAYS = True  # las reglas sobre eventos de AWS son gratis
 GLOBAL = False
+TAGS = False  # el colector no lee tags: no cuenta para la regla de recursos sin tag
 
 
 def _buses(events):

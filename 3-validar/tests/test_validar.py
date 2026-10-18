@@ -71,7 +71,9 @@ def test_rds_opensearch_s3(hallazgos_reglas):
 def test_tags_agregado_por_cuenta(hallazgos_reglas):
     tags = por_titulo(hallazgos_reglas, "sin tag")
     assert [f["account_id"] for f in tags] == ["111111111111"]   # la cuenta de dev está toda tageada
-    assert tags[0]["resource_id"] is None and tags[0]["title"].startswith("12 de 14")
+    # 1 recurso es de un colector que no lee tags (TAGS = False): queda fuera del conteo y se informa.
+    assert tags[0]["resource_id"] is None and tags[0]["title"].startswith("11 de 13")
+    assert "1 recursos de servicios cuyos tags no se leen" in tags[0]["detail"]
 
 
 # ---------- b) cruce billing ----------
@@ -181,16 +183,18 @@ def test_sin_aws_doctor_instalado(tmp_path, monkeypatch):
 # ---------- de punta a punta ----------
 
 def test_validar_completo(tmp_path, monkeypatch):
-    def falso_doctor(cfg, discovery, salida, timeout, creds_fn):
+    def falso_doctor(cfg, discovery, salida, timeout, creds_fn, habilitadas):
         items, _ = doctor.parsear_salida((FIX / "doctor_waste.json").read_text())
         return doctor.items_a_findings({("111111111111", "us-east-1"): items}), []
 
     monkeypatch.setattr(doctor, "ejecutar", falso_doctor)
+    monkeypatch.setattr(doctor, "version", lambda: "aws-doctor version 0.0-test")  # sin ejecutar el binario
     findings, _ = validar.validar(CFG, cargar("discovery.json"), cargar("inventory.json"), tmp_path)
 
     datos = json.loads((tmp_path / "findings.json").read_text())
     assert set(datos) >= {"generated_at", "findings"}
     claves = {"id", "category", "severity", "account_id", "region", "resource_id", "title", "detail",
+              "rule_id", "issue_id", "fingerprint", "price_source", "is_saving",
               "monthly_usd", "source"}
     assert all(set(f) == claves for f in datos["findings"])
     assert {f["source"] for f in findings} == {"aws-doctor", "cruce-billing", "regla"}
@@ -203,8 +207,8 @@ def test_validar_completo(tmp_path, monkeypatch):
     # vol-0001 lo marcan aws-doctor y la regla (desperdicio): queda uno solo, el de aws-doctor.
     vol = [f for f in findings if f["resource_id"] == "vol-0001" and f["category"] == "desperdicio"]
     assert len(vol) == 1 and vol[0]["source"] == "aws-doctor"
-    # gp2 es otra categoría (costo): se mantiene
-    assert any(f["resource_id"] == "vol-0001" and f["category"] == "costo" for f in findings)
+    # gp2→gp3 (costo) sobre un volumen que ya es desperdicio se descarta: el ahorro no se cuenta dos veces.
+    assert not any(f["resource_id"] == "vol-0001" and f["category"] == "costo" for f in findings)
 
     md = (tmp_path / "findings.md").read_text()
     assert "## Severidad alta" in md and "Produccion (111111111111)" in md and "sg-0001" in md

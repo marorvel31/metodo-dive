@@ -8,6 +8,7 @@ TRIGGERS = ["Amazon Elastic Container Service", "Amazon DynamoDB", "Amazon Relat
             "Amazon ElastiCache", "AWS Lambda"]
 ALWAYS = False
 GLOBAL = False
+TAGS = False  # el colector no lee tags: no cuenta para la regla de recursos sin tag
 
 _NAMESPACES = ["ecs", "dynamodb", "rds", "elasticache", "lambda", "ec2"]
 

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DIVE · Dashboard</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header>
+  <div class="wrap top">
+    <div>
+      <h1>DIVE · Dashboard</h1>
+      <div class="sub" id="sub">Cargando…</div>
+    </div>
+    <div class="controles">
+      <label>Organización <select id="sel-org"></select></label>
+      <label>Corrida <select id="sel-run"></select></label>
+      <label>Cuenta <select id="sel-cuenta"><option value="">Todas las cuentas</option></select></label>
+      <button class="btn" id="btn-tema" type="button" aria-label="Cambiar tema">Tema</button>
+    </div>
+  </div>
+  <nav class="wrap" role="tablist">
+    <button role="tab" data-tab="resumen" aria-selected="true">Resumen</button>
+    <button role="tab" data-tab="recursos" aria-selected="false">Recursos <span class="badge" id="b-recursos"></span></button>
+    <button role="tab" data-tab="hallazgos" aria-selected="false">Hallazgos <span class="badge" id="b-hallazgos"></span></button>
+    <button role="tab" data-tab="corridas" aria-selected="false">Corridas</button>
+  </nav>
+</header>
+<main class="wrap">
+  <section id="t-resumen"></section>
+  <section id="t-recursos" hidden>
+    <div class="panel">
+      <div class="filtros">
+        <select id="r-reg" aria-label="Región"><option value="">Todas las regiones</option></select>
+        <select id="r-svc" aria-label="Servicio"><option value="">Todos los servicios</option></select>
+        <select id="r-tipo" aria-label="Tipo"><option value="">Todos los tipos</option></select>
+        <select id="r-hall" aria-label="Con hallazgos">
+          <option value="">Con o sin hallazgos</option><option value="si">Solo con hallazgos</option>
+        </select>
+        <input type="search" id="r-q" placeholder="Buscar por id, nombre, ARN, tag o atributo" aria-label="Buscar recursos">
+      </div>
+      <div class="meta"><span id="r-meta"></span> <span id="r-pag"></span></div>
+      <div class="scroll"><table class="tabla">
+        <thead><tr><th>Cuenta</th><th>Región</th><th>Servicio</th><th>Tipo</th><th>Nombre</th><th>ID</th>
+          <th>Estado</th><th class="num">Hallazgos</th></tr></thead>
+        <tbody id="r-body"></tbody>
+      </table></div>
+    </div>
+    <p class="hint">Toca una fila para ver tags, atributos, relaciones y sus hallazgos.</p>
+  </section>
+  <section id="t-hallazgos" hidden>
+    <div class="panel">
+      <div class="filtros">
+        <select id="f-presencia" aria-label="Presencia">
+          <option value="">Todos</option>
+          <option value="presente" selected>Presentes</option>
+          <option value="nuevo">Nuevos en esta corrida</option>
+          <option value="resuelto">Resueltos (ya no aparecen)</option>
+          <option value="no_verificado">No verificados en esta corrida</option>
+        </select>
+        <select id="f-estado" aria-label="Estado">
+          <option value="">Cualquier estado</option>
+          <option value="abierto">Abierto</option><option value="aceptado">Aceptado</option>
+          <option value="ignorado">Ignorado</option><option value="resuelto">Resuelto (marcado)</option>
+        </select>
+        <select id="f-sev" aria-label="Severidad">
+          <option value="">Cualquier severidad</option>
+          <option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option>
+        </select>
+        <select id="f-cat" aria-label="Categoría"><option value="">Cualquier categoría</option></select>
+        <input type="search" id="f-q" placeholder="Buscar en título, detalle o recurso" aria-label="Buscar">
+      </div>
+      <div class="chips" id="h-sev" aria-label="Hallazgos por severidad"></div>
+      <div class="meta" id="h-meta"></div>
+      <div class="scroll"><table class="tabla">
+        <thead><tr><th>Sev.</th><th>Hallazgo</th><th>Cuenta</th><th>Recurso</th><th class="num">$/mes</th>
+          <th>Historia</th><th>Estado</th></tr></thead>
+        <tbody id="h-body"></tbody>
+      </table></div>
+    </div>
+  </section>
+  <section id="t-corridas" hidden></section>
+  <section id="t-sin-token" hidden>
+    <div class="panel pad">Falta el token. Abre la URL completa que mostró el servidor (la que termina en <code>#t=…</code>).</div>
+  </section>
+  <div id="tooltip" role="tooltip" hidden></div>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

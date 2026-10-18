@@ -7,6 +7,7 @@ NAME = "cloudfront"
 TRIGGERS = ["Amazon CloudFront"]
 ALWAYS = False
 GLOBAL = True
+TAGS = False  # el colector no lee tags: no cuenta para la regla de recursos sin tag
 
 
 def _tipo_origen(o):

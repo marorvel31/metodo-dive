@@ -6,7 +6,7 @@ recursos que tienen o tuvieron tags, así que un 100% aquí no prueba que no fal
 
 Escribe cobertura.json y cobertura.md junto a inventory.json.
 
-Uso: python 3-validar/cobertura.py [--inventory salida/<fecha>/inventory.json]
+Uso: python 3-validar/cobertura.py [--inventory salida/<corrida>/inventory.json]
 """
 
 import argparse
@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from common import ahora, cargar_config, carpeta_salida, escribir_json, leer_json  # noqa: E402
+from common import ahora, cargar_config, corrida_actual, error_corto, escribir_json, heredar_run, leer_json  # noqa: E402
 from common.aws import client, sesion_cuenta  # noqa: E402
 
 
@@ -91,16 +91,20 @@ def main():
     parser.add_argument("--inventory")
     args = parser.parse_args()
     cfg = cargar_config(args.config)
-    ruta_inv = Path(args.inventory) if args.inventory else carpeta_salida(cfg) / "inventory.json"
+    ruta_inv = Path(args.inventory) if args.inventory else corrida_actual(cfg) / "inventory.json"
     inventory = leer_json(ruta_inv)
     discovery = leer_json(ruta_inv.parent / "discovery.json")
+    heredar_run(inventory, cfg, "cobertura", {})  # aborta si la corrida es de otra organización
 
     arns_inv = {r["arn"] for r in inventory["resources"] if r.get("arn")}
     ids_inv = {str(r["id"]) for r in inventory["resources"]}
 
     # Mismas regiones que se inventariaron (las que tienen costo) + us-east-1 para lo global.
+    habilitadas = {a: c["enabled_regions"] for a, c in inventory.get("accounts", {}).items()
+                   if c.get("enabled_regions")}
     tareas = sorted({(a, r if r != "global" else "us-east-1")
-                     for a, c in discovery["accounts"].items() for r in c["regions"]})
+                     for a, c in discovery["accounts"].items() for r in c["regions"]
+                     if r == "global" or a not in habilitadas or r in habilitadas[a]})
     faltantes, total, errores = defaultdict(list), Counter(), []
     with ThreadPoolExecutor(max_workers=cfg["max_workers"]) as pool:
         futuros = {pool.submit(arns_del_oraculo, cfg, a, r): (a, r) for a, r in tareas}
@@ -113,7 +117,7 @@ def main():
                     if not cubierto(arn, arns_inv, ids_inv):
                         faltantes[tipo].append({"account_id": account_id, "region": region, "arn": arn})
             except Exception as e:  # noqa: BLE001
-                errores.append({"account_id": account_id, "region": region, "error": str(e)[:300]})
+                errores.append({"account_id": account_id, "region": region, "error": error_corto(e)})
 
     # Tareas extra para la fase 2: colector × cuenta × región donde el oráculo vio algo que no inventariamos.
     tareas_extra = sorted({(f["account_id"], f["region"], colector_para(t))

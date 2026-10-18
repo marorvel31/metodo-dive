@@ -7,6 +7,7 @@ NAME = "kinesis"
 TRIGGERS = ["Amazon Kinesis", "Amazon Kinesis Firehose"]
 ALWAYS = False
 GLOBAL = False
+TAGS = False  # el colector no lee tags: no cuenta para la regla de recursos sin tag
 
 
 def _firehose(session, region, account_id):

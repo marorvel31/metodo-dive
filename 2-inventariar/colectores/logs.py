@@ -7,6 +7,7 @@ NAME = "logs"
 TRIGGERS = ["AmazonCloudWatch"]
 ALWAYS = True  # un log group sin ingesta no factura, pero existe (y suele no tener retención)
 GLOBAL = False
+TAGS = False  # el colector no lee tags: no cuenta para la regla de recursos sin tag
 
 
 def collect(session, region, account_id):

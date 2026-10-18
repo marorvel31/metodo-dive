@@ -11,6 +11,7 @@ NAME = "cloudformation"
 TRIGGERS = ["AWS CloudFormation"]
 ALWAYS = True  # CloudFormation no factura por stack: el billing nunca lo muestra
 GLOBAL = False
+TAGS = False  # el colector no lee tags: no cuenta para la regla de recursos sin tag
 
 _ESTADOS_VIVOS = [
     "CREATE_IN_PROGRESS", "CREATE_FAILED", "CREATE_COMPLETE", "ROLLBACK_IN_PROGRESS", "ROLLBACK_FAILED",

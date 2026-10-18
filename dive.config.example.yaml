@@ -18,6 +18,7 @@ exclude_accounts: []
 max_workers: 10              # hilos en paralelo (cuenta × región × colector)
 
 output_dir: salida
+org_alias: mi-org            # nombre corto de la organización: identifica sus corridas (por defecto, el o-xxxx)
 
 anonymize:
   replace_terms: []          # palabras de marca a reemplazar, ej. ["acme", "acmepay"]

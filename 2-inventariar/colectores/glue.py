@@ -7,6 +7,7 @@ NAME = "glue"
 TRIGGERS = ["AWS Glue"]
 ALWAYS = False
 GLOBAL = False
+TAGS = False  # el colector no lee tags: no cuenta para la regla de recursos sin tag
 
 
 def _arn(region, account_id, tipo, nombre):

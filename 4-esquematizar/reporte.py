@@ -5,7 +5,7 @@ Pestañas: resumen (cuentas, regiones, recursos, costo del periodo), recursos (f
 cuenta/región/servicio/tipo + buscador), hallazgos por severidad y errores de escaneo.
 
 Uso:
-  python 4-esquematizar/reporte.py                          # usa salida/<hoy>/inventory.json
+  python 4-esquematizar/reporte.py                          # usa salida/<última corrida>/inventory.json
   python 4-esquematizar/reporte.py --inventory salida/2026-09-26/inventory.json [--salida carpeta]
 """
 
@@ -43,6 +43,7 @@ def datos_reporte(inventory, findings=None, discovery=None, diagramas=None):
             for s, v in ((reg or {}).get("services") or {}).items():
                 servicios_costo[s] = servicios_costo.get(s, 0) + (v or 0)
     return {
+        "usage_types": tipos_de_uso(discovery),
         "inventory_generated_at": inventory.get("generated_at"),
         "findings_generated_at": findings.get("generated_at"),
         "period": discovery.get("period"),
@@ -56,6 +57,34 @@ def datos_reporte(inventory, findings=None, discovery=None, diagramas=None):
         "has_discovery": bool(discovery),
         "has_findings": bool(findings),
     }
+
+
+def tipos_de_uso(discovery, top=15):
+    """Los tipos de uso (USAGE_TYPE) más caros del último mes, sumados en la organización y por cuenta.
+    Es gasto actual que señala dónde mirar (NAT, transferencia, almacenamiento, métricas), no ahorro."""
+    series = {}  # usage_type → {cuenta: {mes: usd}}
+    for acc, d in (discovery.get("accounts") or {}).items():
+        for reg in ((d or {}).get("regions") or {}).values():
+            for tipo, por_mes in ((reg or {}).get("usage_types_monthly_usd") or {}).items():
+                destino = series.setdefault(tipo, {}).setdefault(str(acc), {})
+                for mes, usd in (por_mes or {}).items():
+                    destino[mes] = destino.get(mes, 0) + (usd or 0)
+    meses = sorted({m for cuentas in series.values() for por_mes in cuentas.values() for m in por_mes})
+    if not meses:
+        return {"month": None, "previous": None, "rows": []}
+    ultimo, previo = meses[-1], (meses[-2] if len(meses) > 1 else None)
+    filas = []
+    for tipo, cuentas in series.items():
+        por_cuenta = {a: round(m.get(ultimo, 0), 2) for a, m in cuentas.items() if m.get(ultimo)}
+        total = sum(por_cuenta.values())
+        if total:
+            # Lista con clave "usd" (no {cuenta: usd}): el anonimizador solo redondea/porcentualiza claves *usd*.
+            filas.append({"usage_type": tipo, "usd": round(total, 2),
+                          "previous_usd": round(sum(m.get(previo, 0) for m in cuentas.values()), 2) if previo else None,
+                          "accounts": [{"account_id": a, "usd": v}
+                                       for a, v in sorted(por_cuenta.items(), key=lambda kv: -kv[1])]})
+    filas.sort(key=lambda f: -f["usd"])
+    return {"month": ultimo, "previous": previo, "rows": filas[:top]}
 
 
 def json_embebido(datos):
@@ -314,6 +343,18 @@ function resumen(){
     sk.forEach(function(k){ h += "<tr><td>" + esc(k) + '</td><td class="num">' + usd(sc[k]) + '</td><td class="num">' + (100 * sc[k] / tot).toFixed(1) + "%</td></tr>"; });
     h += "</tbody></table></div>";
   }
+  var ut = D.usage_types || {}, filas = ut.rows || [];
+  if (filas.length) {
+    h += "<h2>Principales tipos de uso (" + esc(ut.month) + ")</h2>" +
+      '<p class="hint" style="margin-top:0">Gasto real del último mes por USAGE_TYPE: dónde mirar (NAT, transferencia, almacenamiento, métricas). No es ahorro estimado.</p>' +
+      '<div class="panel scroll"><table><thead><tr><th>Tipo de uso</th><th class="num">USD mes</th><th class="num">Mes anterior</th><th>Cuentas</th></tr></thead><tbody>';
+    filas.forEach(function(f){
+      var cuentas = (f.accounts || []).map(function(c){ return esc(nombreCuenta(c.account_id)) + " " + usd(c.usd); }).join(" · ");
+      h += "<tr><td>" + esc(f.usage_type) + '</td><td class="num">' + usd(f.usd) + '</td><td class="num">' +
+        (f.previous_usd != null ? usd(f.previous_usd) : "—") + '</td><td class="sub">' + cuentas + "</td></tr>";
+    });
+    h += "</tbody></table></div>";
+  }
   if ((D.diagrams || []).length) {
     h += '<h2>Diagramas (abrir con draw.io)</h2><div class="panel" style="padding:12px"><ul style="margin:0;padding-left:20px">';
     D.diagrams.forEach(function(d){ h += '<li><a href="' + esc(d) + '">' + esc(d) + "</a></li>"; });
@@ -433,8 +474,14 @@ function hallazgos(){
             (SEV_ORDEN[String(b.severity).toLowerCase()] == null ? 9 : SEV_ORDEN[String(b.severity).toLowerCase()])) ||
       ((b.monthly_usd || 0) - (a.monthly_usd || 0)) || String(a.id).localeCompare(String(b.id));
   });
-  var mensual = lista.reduce(function(s, f){ return s + (Number(f.monthly_usd) || 0); }, 0);
-  $("h-meta").textContent = lista.length + " hallazgos" + (mensual ? " · " + usd(mensual) + "/mes en juego" : "");
+  // Igual que findings.md: solo desperdicio + costo. Las regiones sorpresa o lo "no inventariado" son
+  // gasto existente, no ahorro.
+  var mensual = lista.reduce(function(s, f){
+    var ahorro = (f.is_saving != null) ? f.is_saving : (f.category === "desperdicio" || f.category === "costo");
+    return s + (ahorro ? (Number(f.monthly_usd) || 0) : 0);
+  }, 0);
+  $("h-meta").textContent = lista.length + " hallazgos" +
+    (mensual ? " · ahorro potencial estimado (desperdicio + costo): " + usd(mensual) + "/mes" : "");
   $("h-body").innerHTML = lista.map(function(f){
     var s = sevNorm(f.severity);
     return '<tr><td><span class="sev sev-' + esc(s) + '">' + esc(s) + "</span></td><td>" + esc(f.category) + "</td><td>" + esc(nombreCuenta(f.account_id)) +
@@ -471,7 +518,7 @@ def generar(inventory, findings=None, discovery=None, ruta=None, diagramas=None)
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--config")
-    p.add_argument("--inventory", help="Ruta a inventory.json (por defecto salida/<hoy>/inventory.json)")
+    p.add_argument("--inventory", help="Ruta a inventory.json (por defecto salida/<última corrida>/inventory.json)")
     p.add_argument("--findings", help="Ruta a findings.json (por defecto, junto a inventory.json)")
     p.add_argument("--discovery", help="Ruta a discovery.json (por defecto, junto a inventory.json)")
     p.add_argument("--salida", help="Carpeta donde escribir reporte.html (por defecto, la de inventory.json)")
@@ -480,8 +527,8 @@ def main():
     if a.inventory:
         inv_path = Path(a.inventory)
     else:
-        from common import cargar_config, carpeta_salida
-        inv_path = carpeta_salida(cargar_config(a.config)) / "inventory.json"
+        from common import cargar_config, corrida_actual
+        inv_path = corrida_actual(cargar_config(a.config)) / "inventory.json"
     if not inv_path.exists():
         raise SystemExit(f"No existe {inv_path}. Corre primero la fase 2 o pasa --inventory.")
     base = Path(a.salida) if a.salida else inv_path.parent
