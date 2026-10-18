@@ -72,6 +72,17 @@ Las salidas quedan en `salida/<corrida>/` (ignorada por git), una carpeta por co
 
 Para ver el resultado sin correr nada, abre `ejemplos/`: una organización sintética de 4 cuentas con su `reporte.html` (funciona offline) y los diagramas `.drawio`.
 
+## Dashboard (fase 5)
+
+```bash
+.venv/bin/python 5-dashboard/dashboard.py                 # corridas del output_dir de DIVE_CONFIG
+.venv/bin/python 5-dashboard/dashboard.py --runs ~/clientes/a/runs --runs ~/clientes/b/runs   # varias organizaciones
+```
+
+Abre la URL que imprime (`http://127.0.0.1:<puerto>/#t=<token>`). Muestra, por organización y corrida, con filtro por cuenta: factura de la ventana y del último mes (con impuestos, Savings Plans y RIs), uso por cuenta, servicios y tipos de uso más caros, el inventario completo y los hallazgos con su historia entre corridas (nuevo, resuelto, no verificado) y un estado editable (abierto, aceptado, ignorado, resuelto) que se guarda por fingerprint.
+
+Sin dependencias (`http.server` + `sqlite3`). La base (`dashboard.sqlite`, modo 0600) queda junto a las corridas. Solo escucha en 127.0.0.1, valida el `Host`, pide el token en cada llamada por header (sin cookies: una cookie de 127.0.0.1 viaja a cualquier otro puerto local) y abre el `reporte.html` de cada corrida en un iframe aislado. Para compartir resultados usa la salida anonimizada, no el dashboard.
+
 ## Cobertura: qué tan completo es el inventario
 
 `3-validar/cobertura.py` compara el inventario contra la Tagging API, un oráculo independiente de los colectores, y genera `tareas_extra` para volver a correr la fase 2 sobre lo que el billing no mostró (típicamente lo que está en free tier).
