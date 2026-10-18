@@ -5,6 +5,7 @@ Correr: .venv/bin/python -m pytest anonimizar/tests -q
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -141,3 +142,54 @@ def test_persona_numerica_no_se_registra():
     a = an.Anonimizador(an.Mapeo(), ["acme"], "rounded")
     a.json({"user_name": "134", "owner": "ab"})
     assert a.mp.m["person"] == {}
+
+
+# ---------- Contrato v2 ----------
+
+def test_campos_v2_se_anonimizan_y_las_huellas_quedan_consistentes(tmp_path):
+    corrida = tmp_path / "2026-10-18T101500Z"
+    corrida.mkdir()
+    run = {"run_id": corrida.name, "organization_id": "o-ab12cd34ef", "management_account_id": "111122223333",
+           "org_alias": "acme-holding", "currency": "USD"}
+    huella = "0123456789abcdef"
+    f = {"id": "F001", "category": "riesgo", "severity": "alta", "account_id": "111122223333", "region": None,
+         "resource_id": "root", "title": "t", "detail": "d", "monthly_usd": None, "source": "regla",
+         "rule_id": "regla.root_sin_mfa", "issue_id": "root.no_mfa", "fingerprint": huella,
+         "price_source": None, "is_saving": False}
+    (corrida / "discovery.json").write_text(json.dumps({"run": run, "accounts": {}}))
+    (corrida / "findings.json").write_text(json.dumps({"run": run, "findings": [f]}))
+    (corrida / "reporte.html").write_text('<script type="application/json" id="datos">' + json.dumps(
+        {"findings": [f], "org": "ou-ab12-cd34ef56 r-ab12"}) + "</script>")
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text('anonymize:\n  replace_terms: ["acme"]\n')
+    assert an.main([str(corrida), "--config", str(cfg)]) == 0
+
+    anon = corrida.parent / f"{corrida.name}-anon"
+    todo = "".join(p.read_text() for p in anon.rglob("*") if p.is_file())
+    for original in ("o-ab12cd34ef", "acme-holding", "111122223333", huella, "ou-ab12-cd34ef56", "r-ab12"):
+        assert original not in todo, original
+    h_json = json.loads((anon / "findings.json").read_text())["findings"][0]["fingerprint"]
+    assert len(h_json) == 16 and f'"fingerprint": "{h_json}"' in (anon / "reporte.html").read_text()
+    assert json.loads((anon / "discovery.json").read_text())["run"]["org_alias"].startswith("org-")
+
+
+def test_org_alias_de_la_corrida_se_trata_como_marca(tmp_path):
+    corrida = tmp_path / "2026-10-18T101500Z"
+    corrida.mkdir()
+    (corrida / "discovery.json").write_text(json.dumps({"run": {"org_alias": "globexcorp"}, "accounts": {}}))
+    (corrida / "inventory.json").write_text(json.dumps({"resources": [
+        {"id": "globexcorp-logs", "arn": "arn:aws:s3:::globexcorp-logs", "ou": "ou-ab12-cd34ef56", "root": "r-ab12",
+         "html_id": "r-meta"}]}))
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text('anonymize:\n  replace_terms: ["acme"]\n')
+    assert an.main([str(corrida), "--config", str(cfg)]) == 0
+    anon = (corrida.parent / f"{corrida.name}-anon" / "inventory.json").read_text()
+    assert "globexcorp" not in anon.lower() and "ou-ab12-cd34ef56" not in anon and "r-ab12" not in anon
+    assert "r-meta" in anon                                   # no es un ID de Organizations
+    ou = re.search(r'"ou": "([^"]+)"', anon).group(1)
+    assert re.fullmatch(r"ou-[a-z0-9]{4}-[a-z0-9]{8}", ou)
+
+
+def test_run_id_se_conserva():
+    a = an.Anonimizador(an.Mapeo(), ["acme"], "rounded")
+    assert a.json({"run": {"run_id": "2026-10-18T073802Z"}})["run"]["run_id"] == "2026-10-18T073802Z"

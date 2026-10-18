@@ -1,7 +1,7 @@
 """Anonimizar: convierte las salidas de una corrida en una versión presentable en público.
 
-Lee todos los archivos de salida/<fecha>/ y escribe su versión anónima en salida/<fecha>-anon/.
-El mapeo real→anónimo se guarda en salida/<fecha>/anon.mapping.json (fuera de la carpeta
+Lee todos los archivos de salida/<corrida>/ y escribe su versión anónima en salida/<corrida>-anon/.
+El mapeo real→anónimo se guarda en salida/<corrida>/anon.mapping.json (fuera de la carpeta
 anónima; el .gitignore excluye *.mapping.json) y se reusa en corridas siguientes para que
 los reemplazos sean estables.
 
@@ -10,9 +10,9 @@ cadena de 12 dígitos que no sea un ID falso, un término de marca, una IP públ
 un dominio sin anonimizar, lo lista y sale con código 2: esa salida NO se puede presentar.
 
 Uso:
-  python anonimizar/anonimizar.py salida/<fecha> [--ocultar-privadas] [--mapping otro.mapping.json]
+  python anonimizar/anonimizar.py salida/<corrida> [--ocultar-privadas] [--mapping otro.mapping.json]
                                                  [--termino acme ...] [--config dive.config.yaml]
-  python anonimizar/anonimizar.py --verificar salida/<fecha>-anon --mapping salida/<fecha>/anon.mapping.json
+  python anonimizar/anonimizar.py --verificar salida/<corrida>-anon --mapping salida/<corrida>/anon.mapping.json
 """
 
 import argparse
@@ -85,6 +85,13 @@ RE_IP = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?:/(\d{1,2}))?(?!\.?\d)
 RE_IP6 = re.compile(r"(?:(?<![0-9A-Za-z.:_/-])|(?<=[^:][:/])(?=[0-9A-Fa-f]))"
                     r"((?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4})(?:/(\d{1,3}))?(?![0-9A-Za-z:.])")
 RE_EMAIL_URL = re.compile(r"(?<![\w.+-])([\w.+-]+)%40((?:[a-z0-9-]+\.)+[a-z]{2,})(?![\w-])", re.IGNORECASE)
+# Organizations: o-<10-32> (organización), r-<4> con algún dígito (root; sin dígito chocaría con ids como
+# r-meta del reporte), ou-<root>-<8-32> (unidad organizativa).
+RE_ORG = re.compile(r"(?<![A-Za-z0-9-])((?:o-[a-z0-9]{10,32})|(?:ou-[a-z0-9]{4,32}-[a-z0-9]{8,32})|(?:r-(?=[a-z]{0,3}\d)[a-z0-9]{4}))"
+                    r"(?![A-Za-z0-9-])")
+# Campos del contrato v2 que también viajan como texto (JSON embebido en reporte.html).
+RE_CAMPO_FINGERPRINT = re.compile(r"(\"fingerprint\"\s*:\s*\")([0-9a-f]{16})(\")")
+RE_CAMPO_ORG_ALIAS = re.compile(r"(\"org_alias\"\s*:\s*\")([^\"\\]+)(\")")
 RE_12_GUIONES = re.compile(r"(?<![\d-])(\d{4})-(\d{4})-(\d{4})(?![\d-])")
 RE_IP_GUIONES = re.compile(r"(?<![a-z0-9])(ec2|ip)-(\d{1,3})-(\d{1,3})-(\d{1,3})-(\d{1,3})(?![\d])", re.IGNORECASE)
 RE_12 = re.compile(r"(?<!\d)(\d{12})(?!\d)")
@@ -282,7 +289,7 @@ class Mapeo:
     mientras se reuse el mismo archivo de mapeo y no se pueden revertir sin él."""
 
     CATEGORIAS = ("account_id", "account_name", "resource_id", "uuid", "token", "cdk", "ip", "ip_private",
-                  "ip6", "domain", "email", "access_key", "term", "person")
+                  "ip6", "domain", "email", "access_key", "term", "person", "org", "fingerprint")
 
     def __init__(self, datos=None):
         datos = datos or {}
@@ -528,6 +535,22 @@ class Anonimizador:
     def dominio(self, reg):
         return self.mp.siguiente("domain", reg.lower(), lambda n: "ejemplo.com" if n == 1 else f"ejemplo{n}.com")
 
+    def org_id(self, valor):
+        partes = valor.split("-")  # o-x, r-x, ou-<root>-<ou>: cada parte en minúsculas, mismo largo
+        return self.mp.obtener("org", valor, lambda h: "-".join(
+            [partes[0]] + ["".join("0123456789abcdefghijklmnopqrstuvwxyz"[b % 36] for b in
+                                   hashlib.sha256(h + p.encode()).digest()[:len(p)]) for p in partes[1:]]))
+
+    def org_alias(self, valor):
+        if RE_ORG.fullmatch(valor):
+            return self.org_id(valor)
+        return self.mp.siguiente("org", valor, lambda n: f"org-{n:02d}")
+
+    def huella(self, valor):
+        """El fingerprint es un sha256 sin sal: con los IDs de cuenta (10^12) se podría revertir. En la copia
+        anónima se rehace con la sal del mapeo: sigue siendo estable entre corridas que reusan el mapeo."""
+        return self.mp.obtener("fingerprint", valor, lambda h: h.hex()[:16])
+
     def ip6(self, texto):
         """IPv6 pública → 2001:db8::/32 (documentación). Las privadas (ULA, link-local) se dejan, como las
         IPv4 privadas. Cada dirección se mapea por separado: la contención VPC /56 ⊃ subred /64 no se conserva."""
@@ -603,6 +626,9 @@ class Anonimizador:
             t = self._costo_texto(t)
         t = RE_ACCESS_KEY.sub(lambda m: self.mp.obtener("access_key", m.group(1),
                                                          lambda h: "AKIAEXAMPLE" + alnum_como("A" * 9, h)), t)
+        t = RE_CAMPO_FINGERPRINT.sub(lambda m: m.group(1) + self.huella(m.group(2)) + m.group(3), t)
+        t = RE_CAMPO_ORG_ALIAS.sub(lambda m: m.group(1) + self.org_alias(m.group(2)) + m.group(3), t)
+        t = RE_ORG.sub(lambda m: self.org_id(m.group(1)), t)
         t = RE_EMAIL.sub(lambda m: self.email(m.group(1), m.group(2)), t)
         t = RE_EMAIL_URL.sub(lambda m: self.email(m.group(1), m.group(2)).replace("@", "%40", 1), t)
         t = RE_IP6.sub(lambda m: self.ip6(m.group(1)) + (f"/{m.group(2)}" if m.group(2) else ""), t)
@@ -728,6 +754,12 @@ class Anonimizador:
                 k2 = self.texto(k, costos=False) if isinstance(k, str) else k
                 if isinstance(k, str) and isinstance(v, str) and RE_CLAVE_PERSONA.match(k):
                     salida[k2] = self.persona(v)
+                elif k == "run_id" and isinstance(v, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}(T\d{6}Z)?", v):
+                    salida[k2] = v
+                elif k == "fingerprint" and isinstance(v, str):
+                    salida[k2] = self.huella(v)
+                elif k == "org_alias" and isinstance(v, str):
+                    salida[k2] = self.org_alias(v)
                 elif (k == "name" and len(ruta) >= 2 and ruta[-2] == "accounts" and isinstance(v, str)) \
                         or (k == "account_name" and isinstance(v, str)):
                     salida[k2] = self.nombre_cuenta(v) if v in self.mp.m["account_name"] else self.texto(v)
@@ -844,7 +876,8 @@ def verificar(carpeta, mapeo, terminos, dominios_publicos=(), privadas=False):
         "ips": (r"(?<![\d.])", r"(?!\d|\.\d)", False, ("ip", "ip_private")),
         "ips6": (r"(?<![0-9A-Za-z:])", r"(?![0-9A-Za-z:])", True, ("ip6",)),
         "dominios": (r"(?<![A-Za-z0-9-])", r"(?![A-Za-z0-9-])", True, ("domain", "email")),
-        "ids": (*alnum, True, ("resource_id", "uuid", "token", "access_key")),
+        "ids": (*alnum, True, ("resource_id", "uuid", "token", "access_key", "fingerprint")),
+        "orgs": (r"(?<![A-Za-z0-9-])", r"(?![A-Za-z0-9-])", True, ("org",)),
         "ids_cortos": (*alnum, False, ("token",)),
         # el hash CDK puede ir pegado a su prefijo en minúsculas (database4f1a9c2e): sin borde inicial
         "cdk": ("", r"(?![A-Za-z0-9])", True, ("cdk",)),
@@ -907,6 +940,9 @@ def verificar(carpeta, mapeo, terminos, dominios_publicos=(), privadas=False):
             ip = es_ip6(m.group(1))
             if ip and ip_publica(ip) and str(ip) not in falsos["ip6"]:
                 reportar("IPv6 pública", m)
+        for m in RE_ORG.finditer(t):
+            if m.group(1) not in falsos["org"]:
+                reportar("ID de Organizations sin anonimizar", m)
         for m in RE_12_GUIONES.finditer(t):
             if "".join(m.groups()) not in falsos["account_id"]:
                 reportar("ID de cuenta con guiones", m)
@@ -976,6 +1012,20 @@ def terminos_de(cfg_anon, extra):
     return list(t) + list(extra)
 
 
+def con_alias_de_la_corrida(terminos, carpeta):
+    """El org_alias de la corrida suele ser la marca (bucket "<alias>-logs"): se agrega a los términos para
+    reemplazarlo y verificarlo en texto libre, no solo en el campo org_alias."""
+    try:
+        alias = (json.loads((Path(carpeta) / "discovery.json").read_text()).get("run") or {}).get("org_alias")
+    except (OSError, ValueError, AttributeError):
+        return terminos
+    if not isinstance(alias, str) or len(alias) < 4 or RE_ORG.fullmatch(alias):
+        return terminos
+    if isinstance(terminos, dict):
+        return terminos if alias.lower() in {k.lower() for k in terminos} else {**terminos, alias: "empresa"}
+    return terminos if alias.lower() in {t.lower() for t in terminos} else [*terminos, alias]
+
+
 def imprimir_problemas(problemas):
     print(f"\nVERIFICACIÓN FALLIDA: {len(problemas)} hallazgo(s). NO presentes esta salida.\n", file=sys.stderr)
     for rel, motivo, frag in problemas[:200]:
@@ -986,7 +1036,7 @@ def imprimir_problemas(problemas):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Anonimiza una corrida del Método DIVE.")
-    ap.add_argument("carpeta", help="salida/<fecha> (o salida/<fecha>-anon con --verificar)")
+    ap.add_argument("carpeta", help="salida/<corrida> (o salida/<corrida>-anon con --verificar)")
     ap.add_argument("--config", help="dive.config.yaml (por defecto el de la raíz o DIVE_CONFIG)")
     ap.add_argument("--mapping", help=f"archivo de mapeo a usar/reusar (por defecto <carpeta>/{MAPEO_NOMBRE})")
     ap.add_argument("--termino", action="append", default=[], help="término de marca extra (repetible)")
@@ -1002,6 +1052,7 @@ def main(argv=None):
     terminos = terminos_de(cfg, args.termino)
     publicos = cfg.get("keep_domains") or []
     origen = resolver(args.carpeta)
+    terminos = con_alias_de_la_corrida(terminos, origen)
     if not origen.is_dir():
         raise SystemExit(f"No existe la carpeta {origen}")
 
@@ -1026,7 +1077,7 @@ def main(argv=None):
               file=sys.stderr)
         return 2
     if origen.name.endswith("-anon"):
-        raise SystemExit("Esa carpeta ya es anónima; pasa la carpeta original salida/<fecha>.")
+        raise SystemExit("Esa carpeta ya es anónima; pasa la carpeta original salida/<corrida>.")
     ruta_mapeo = resolver(args.mapping) if args.mapping else origen / MAPEO_NOMBRE
     mapeo = Mapeo(json.loads(ruta_mapeo.read_text()) if ruta_mapeo.exists() else None)
     destino = origen.parent / f"{origen.name}-anon"
